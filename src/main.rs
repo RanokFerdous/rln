@@ -1,11 +1,17 @@
 mod discovery;
+mod identity;
 mod storage;
+mod transfer;
 
 use anyhow::Result;
 use discovery::l2_scanner;
 use discovery::mdns_scanner;
+use identity::keys::NodeIdentity;
+use std::path::Path;
+use std::sync::Arc;
 use storage::db::Database;
 use storage::drift::{calculate_drift, DriftEvent};
+use transfer::stream::P2pNode;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -19,14 +25,45 @@ async fn main() -> Result<()> {
         historical_snapshots.len()
     );
 
-    // 2. Setup Network Interface
+    // 2. Cryptographic Bootstrapping
+    let key_path = "data/identity.key";
+    let is_new_key = !Path::new(key_path).exists();
+
+    let identity = NodeIdentity::load_or_generate(key_path)?;
+
+    if is_new_key {
+        println!("🔑 Generated NEW Cryptographic Identity.");
+    } else {
+        println!("🔑 Loaded existing Cryptographic Identity.");
+    }
+    println!("🛡️  Peer ID: {}", identity.peer_id_hex());
+
+    // 3. Initialize P2P Networking (New in Milestone 2.2)
+    // We pass the raw secret bytes from our identity into the Iroh node
+    let p2p_node = Arc::new(P2pNode::new(&identity.secret_bytes()).await?);
+
+    // Spawn the P2P listener in the background so it doesn't block our UI or scanners
+    let _p2p_task = tokio::spawn({
+        let node = Arc::clone(&p2p_node);
+        async move {
+            if let Err(e) = node.listen_for_peers().await {
+                eprintln!("❌ P2P Listener crashed: {}", e);
+            }
+        }
+    });
+
+    // Let the P2P listener print its startup logs before the scanners take over the console
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    println!("--------------------------------------------------");
+
+    // 3. Setup Network Interface
     let iface = l2_scanner::get_active_interface()?;
     if let Err(e) = l2_scanner::verify_privileges(&iface) {
         eprintln!("🔒 Security Alert: {}", e);
         return Ok(());
     }
 
-    // 3. Launch Discovery Engines Concurrently
+    // 4. Launch Discovery Engines Concurrently
     println!("🚀 Launching Discovery Engines on {}...\n", iface.name);
 
     let arp_task = tokio::spawn({
@@ -44,7 +81,7 @@ async fn main() -> Result<()> {
     let mut mdns_scan = mdns_res??;
     current_scan.append(&mut mdns_scan);
 
-    // 4. Execute the Drift Engine
+    // 5. Execute the Drift Engine
     println!("\n🧠 Analyzing Network Drift...");
     let drift_events = calculate_drift(&historical_snapshots, &current_scan);
 
@@ -52,7 +89,7 @@ async fn main() -> Result<()> {
         println!("  -> No devices found. Is the network down?");
     }
 
-    // 5. Process and Display Events
+    // 6. Process and Display Events
     for event in drift_events {
         match event {
             DriftEvent::NoChange { mac } => {
@@ -85,5 +122,7 @@ async fn main() -> Result<()> {
     }
 
     println!("\n✅ Network scan and drift analysis complete.");
+    // Keep the main thread alive temporarily for testing so the P2P node can listen
+    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
     Ok(())
 }
