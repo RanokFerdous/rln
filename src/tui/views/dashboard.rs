@@ -7,13 +7,13 @@
 //! │──────────────── Active P2P Transfers ───────────────│
 //! └───────────────────── System Logs ───────────────────┘
 //! ```
-use crate::app::App;
+use crate::app::{App, InputMode};
 use crate::storage::drift::DriftEvent;
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -33,6 +33,11 @@ pub fn draw(f: &mut Frame, app: &App) {
     draw_topology(f, app, chunks[1]);
     draw_transfers(f, app, chunks[2]);
     draw_logs(f, app, chunks[3]);
+
+    // Render the send-file overlay on top when in SendFile mode
+    if app.input_mode == InputMode::SendFile {
+        draw_send_overlay(f, app);
+    }
 }
 
 /// Renders the top header bar with device count and status.
@@ -238,5 +243,89 @@ fn truncate(s: &str, max_chars: usize) -> String {
         format!("{}…", head)
     } else {
         head
+    }
+}
+
+/// Renders a centered modal overlay for the send-file command.
+///
+/// The overlay clears its area with [`Clear`] before drawing so it sits
+/// cleanly on top of whatever panel is underneath it.
+fn draw_send_overlay(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 7, f.area());
+
+    // Clear the background so the popup doesn't show through
+    f.render_widget(Clear, area);
+
+    let prompt = Line::from(vec![
+        Span::styled(
+            "Peer ID  : ",
+            Style::default().fg(Color::DarkGray),
+        ),
+        Span::styled(
+            "bby3dwtxkbcniifx...   ",
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]);
+    let example = Line::from(vec![
+        Span::styled(
+            "Filepath : ",
+            Style::default().fg(Color::DarkGray),
+        ),
+        Span::styled(
+            "/home/user/documents/file.pdf",
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]);
+    let divider = Line::from("");
+    let input_line = Line::from(vec![
+        Span::styled(
+            " > ",
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            app.input_buffer.clone(),
+            Style::default().fg(Color::White),
+        ),
+        // Blinking cursor block
+        Span::styled(
+            "█",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::RAPID_BLINK),
+        ),
+    ]);
+
+    let text = Text::from(vec![prompt, example, divider, input_line]);
+
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow))
+                .title(Span::styled(
+                    " 📤 Send File  [Enter = send]  [Esc = cancel] ",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .title_alignment(Alignment::Center),
+        )
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(popup, area);
+}
+
+/// Computes a centered [`Rect`] with the given percentage width and absolute height.
+///
+/// Used to position modal popups in the center of the terminal.
+fn centered_rect(percent_x: u16, height: u16, r: Rect) -> Rect {
+    let popup_width = r.width * percent_x / 100;
+    let x = r.x + (r.width.saturating_sub(popup_width)) / 2;
+    let y = r.y + (r.height.saturating_sub(height)) / 2;
+    Rect {
+        x,
+        y,
+        width: popup_width.min(r.width),
+        height: height.min(r.height),
     }
 }

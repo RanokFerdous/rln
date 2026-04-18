@@ -3,7 +3,7 @@ use crossterm::event::KeyCode;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 
-use lan_asin::app::App;
+use lan_asin::app::{App, InputMode};
 use lan_asin::discovery::{l2_scanner, mdns_scanner};
 use lan_asin::identity::keys::NodeIdentity;
 use lan_asin::storage::db::Database;
@@ -123,12 +123,66 @@ async fn main() -> Result<()> {
         // Handle events
         if let Some(event) = rx.recv().await {
             match event {
-                AppEvent::Key(key) => {
-                    // Press 'q' or 'Esc' to quit
-                    if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
-                        app.quit();
-                    }
-                }
+                AppEvent::Key(key) => match app.input_mode {
+                    // --- Normal mode: single-key shortcuts ---
+                    InputMode::Normal => match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => app.quit(),
+                        KeyCode::Char('s') => {
+                            app.input_mode = InputMode::SendFile;
+                            app.input_buffer.clear();
+                            app.add_log("[SEND] Enter: <peer_id> <filepath>  (Esc to cancel)".into());
+                        }
+                        _ => {}
+                    },
+                    // --- Send-file input mode ---
+                    InputMode::SendFile => match key.code {
+                        KeyCode::Esc => {
+                            app.input_mode = InputMode::Normal;
+                            app.input_buffer.clear();
+                            app.add_log("[SEND] Cancelled.".into());
+                        }
+                        KeyCode::Backspace => {
+                            app.input_buffer.pop();
+                        }
+                        KeyCode::Enter => {
+                            let raw = app.input_buffer.trim().to_string();
+                            app.input_mode = InputMode::Normal;
+                            app.input_buffer.clear();
+
+                            // Parse "<peer_id> <filepath>" separated by first space
+                            let mut parts = raw.splitn(2, ' ');
+                            let peer_str = parts.next().unwrap_or("").to_string();
+                            let path_str = parts.next().unwrap_or("").trim().to_string();
+
+                            if peer_str.is_empty() || path_str.is_empty() {
+                                app.add_log("❌ [SEND] Usage: <peer_id> <filepath>".into());
+                            } else {
+                                app.add_log(format!("[SEND] Connecting to {}...", &peer_str[..peer_str.len().min(16)]));
+                                let node_send = Arc::clone(&p2p_node);
+                                let tx_send = tx.clone();
+                                tokio::spawn(async move {
+                                    use std::path::PathBuf;
+                                    use std::str::FromStr;
+                                    match iroh::net::NodeId::from_str(&peer_str) {
+                                        Ok(peer_id) => {
+                                            let path = PathBuf::from(&path_str);
+                                            if let Err(e) = node_send.send_file(peer_id, &path, tx_send.clone()).await {
+                                                let _ = tx_send.send(AppEvent::Log(format!("❌ [SEND] Failed: {}", e))).await;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let _ = tx_send.send(AppEvent::Log(format!("❌ [SEND] Invalid Peer ID: {}", e))).await;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            app.input_buffer.push(c);
+                        }
+                        _ => {}
+                    },
+                },
                 AppEvent::NetworkUpdate(drift_events) => {
                     app.add_log("[NETWORK] Scan complete. Updating drift state.".into());
                     app.active_drift_events = drift_events;
@@ -137,13 +191,12 @@ async fn main() -> Result<()> {
                     app.add_log(msg);
                 }
                 AppEvent::TransferProgress(state) => {
-                    // Overwrite the existing progress for this peer/file or add new
                     app.active_transfers.retain(|t| t.peer_id != state.peer_id || t.filename != state.filename);
                     if state.progress_pct < 100 {
                         app.active_transfers.push(state);
                     }
                 }
-                AppEvent::Tick => {} // We just let the loop continue to redraw
+                AppEvent::Tick => {}
             }
         }
     }

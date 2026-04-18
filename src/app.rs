@@ -6,6 +6,15 @@ use crate::intelligence::topology::SwitchTopology;
 use crate::storage::drift::DriftEvent;
 use std::collections::{HashMap, VecDeque};
 
+/// Controls which keyboard mode the application is in.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InputMode {
+    /// Normal mode — arrow keys and single-letter shortcuts active.
+    Normal,
+    /// Send-file mode — user is typing `<peer_id> <filepath>` into the input bar.
+    SendFile,
+}
+
 /// Represents a file transfer that is currently in progress over an Iroh P2P stream.
 #[derive(Clone, Debug)]
 pub struct TransferState {
@@ -23,8 +32,11 @@ pub struct TransferState {
 pub struct App {
     /// Whether the application event loop should continue running.
     pub is_running: bool,
+    /// Current keyboard interaction mode.
+    pub input_mode: InputMode,
+    /// The text the user has typed into the active input bar.
+    pub input_buffer: String,
     /// A bounded ring-buffer of log messages shown in the TUI log panel.
-    /// Capped at [`App::MAX_LOGS`] entries; oldest entries are evicted first.
     pub logs: VecDeque<String>,
     /// Count of devices known from persistent storage at startup.
     pub known_devices: usize,
@@ -44,8 +56,11 @@ impl App {
     pub fn new(known_devices: usize) -> Self {
         let mut logs = VecDeque::with_capacity(Self::MAX_LOGS + 1);
         logs.push_back("[SYSTEM] RLN v2.0 Initialized...".to_string());
+        logs.push_back("[SYSTEM] Press 's' to send a file to a peer.".to_string());
         Self {
             is_running: true,
+            input_mode: InputMode::Normal,
+            input_buffer: String::new(),
             logs,
             known_devices,
             active_drift_events: Vec::new(),
@@ -59,10 +74,7 @@ impl App {
         self.is_running = false;
     }
 
-    /// Appends a message to the log panel.
-    ///
-    /// If the log buffer exceeds [`App::MAX_LOGS`] entries, the oldest entry is
-    /// evicted first (O(1) with `VecDeque`).
+    /// Appends a message to the log panel, evicting the oldest if full (O(1)).
     pub fn add_log(&mut self, message: String) {
         if self.logs.len() >= Self::MAX_LOGS {
             self.logs.pop_front();
@@ -79,13 +91,18 @@ mod tests {
     fn test_add_log_bounding() {
         let mut app = App::new(0);
         app.logs.clear();
-
         for i in 0..60 {
             app.add_log(format!("Log message {}", i));
         }
-
         assert_eq!(app.logs.len(), 50);
         assert_eq!(app.logs[0], "Log message 10");
         assert_eq!(app.logs.back().unwrap(), "Log message 59");
+    }
+
+    #[test]
+    fn test_input_mode_starts_normal() {
+        let app = App::new(0);
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.input_buffer.is_empty());
     }
 }
