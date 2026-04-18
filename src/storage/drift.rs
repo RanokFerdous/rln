@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::storage::db::DeviceSnapshot;
 use std::collections::HashMap;
 

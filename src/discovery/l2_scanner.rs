@@ -30,24 +30,68 @@ pub fn verify_privileges(iface: &NetworkInterface) -> Result<()> {
     }
 }
 
-/// Initiates the asynchronous ARP sweep across the interface's subnet.
 pub async fn run_arp_sweep(iface: &NetworkInterface) -> Result<Vec<ScannedDevice>> {
-    println!("📡 [L2] Starting ARP sweep on interface: {}", iface.name);
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    use async_arp::{Client, ClientConfigBuilder, ClientSpinner, RequestInputBuilder};
+    use pnet::util::MacAddr;
+    use std::net::Ipv4Addr;
 
-    // Simulating a couple of discovered devices
-    let devices = vec![
-        ScannedDevice {
-            mac_address: "00:1B:44:11:3A:B7".to_string(),
-            ip_address: "192.168.1.10".to_string(), // Our router from earlier
-            service_name: None,
-        },
-        ScannedDevice {
-            mac_address: "AA:BB:CC:DD:EE:FF".to_string(),
-            ip_address: "192.168.1.105".to_string(), // A brand new device
-            service_name: None,
-        },
-    ];
+    println!("📡 [L2] Starting ARP sweep on interface: {}", iface.name);
+
+    // Get our IPv4
+    let network = iface.ips.iter().find(|ip| ip.is_ipv4());
+    let (our_ip, network) = match network {
+        Some(pnet::ipnetwork::IpNetwork::V4(net)) => (net.ip(), net),
+        _ => bail!("No IPv4 address found on interface"),
+    };
+
+    let our_mac = iface.mac.unwrap_or(MacAddr::zero());
+    if our_mac == MacAddr::zero() {
+        bail!("Interface does not have a MAC address");
+    }
+
+    // Initialize async-arp client
+    let config = ClientConfigBuilder::new(&iface.name)
+        .with_response_timeout(std::time::Duration::from_millis(500))
+        .build();
+    let client = Client::new(config)?;
+    let spinner = ClientSpinner::new(client).with_retries(1);
+
+    // Iterate over the IPs in the subnet
+    let mut requests = Vec::new();
+    let net_u32 = u32::from(network.network());
+    let mask = network.prefix();
+    let hosts = (1 << (32 - mask)) - 2;
+
+    for i in 1..=hosts {
+        let target_ip = Ipv4Addr::from(net_u32 + i);
+        if target_ip == our_ip {
+            continue;
+        } // Skip ourselves
+
+        let req = RequestInputBuilder::new()
+            .with_sender_ip(our_ip)
+            .with_sender_mac(our_mac)
+            .with_target_ip(target_ip)
+            .with_target_mac(MacAddr::zero())
+            .build();
+            
+        if let Ok(req) = req {
+            requests.push(req);
+        }
+    }
+
+    let outcomes = spinner.request_batch(&requests).await?;
+    let mut devices = Vec::new();
+
+    for outcome in outcomes {
+        if let Ok(arp) = outcome.response_result {
+            devices.push(ScannedDevice {
+                mac_address: format!("{}", arp.sender_hw_addr),
+                ip_address: format!("{}", arp.sender_proto_addr),
+                service_name: None,
+            });
+        }
+    }
 
     Ok(devices)
 }

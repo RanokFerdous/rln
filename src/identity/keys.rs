@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use ed25519_dalek::{SecretKey, SigningKey, VerifyingKey};
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
 use std::fs;
 use std::path::Path;

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::storage::drift::DriftEvent;
 use crossterm::event::{self, Event as CrosstermEvent, KeyEvent};
 use std::time::Duration;

@@ -1,21 +1,15 @@
-mod app;
-mod discovery;
-mod identity;
-mod storage;
-mod transfer;
-mod tui;
-
 use anyhow::Result;
-use app::App;
 use crossterm::event::KeyCode;
-use discovery::{l2_scanner, mdns_scanner};
-use identity::keys::NodeIdentity;
 use std::{sync::Arc, time::Duration};
-use storage::db::Database;
-use storage::drift::calculate_drift;
 use tokio::sync::mpsc;
-use transfer::stream::P2pNode;
-use tui::{
+
+use lan_asin::app::App;
+use lan_asin::discovery::{l2_scanner, mdns_scanner};
+use lan_asin::identity::keys::NodeIdentity;
+use lan_asin::storage::db::Database;
+use lan_asin::storage::drift::calculate_drift;
+use lan_asin::transfer::stream::P2pNode;
+use lan_asin::tui::{
     event::{setup_key_listener, AppEvent},
     layout::{restore_terminal, setup_terminal},
     views::dashboard,
@@ -45,6 +39,23 @@ async fn main() -> Result<()> {
     let mut app = App::new(known_devices);
     app.add_log(format!("[ID] Peer ID: {}", identity.peer_id_hex()));
 
+    // MOCK DATA FOR MILESTONE 3.2
+    use lan_asin::app::TransferState;
+    use lan_asin::intelligence::topology::run_lldp_scan;
+    app.topology = run_lldp_scan().await;
+    app.active_transfers.push(TransferState {
+        filename: "ubuntu-24.04-desktop-amd64.iso".to_string(),
+        peer_id: "AA:BB:CC:DD:EE:FF".to_string(),
+        progress_pct: 45,
+        speed_mbps: 112.5,
+    });
+    app.active_transfers.push(TransferState {
+        filename: "project_backup.tar.gz".to_string(),
+        peer_id: "11:22:33:44:55:66".to_string(),
+        progress_pct: 88,
+        speed_mbps: 45.2,
+    });
+
     // 4. Setup Event Channels
     let (tx, mut rx) = mpsc::channel(100);
     setup_key_listener(tx.clone(), Duration::from_millis(250));
@@ -63,7 +74,7 @@ async fn main() -> Result<()> {
                     async move { l2_scanner::run_arp_sweep(&iface).await }
                 });
                 let mdns_task =
-                    tokio::spawn(async move { mdns_scanner::run_mdns_discoveryy().await });
+                    tokio::spawn(async move { mdns_scanner::run_mdns_scan().await });
 
                 let (arp_res, mdns_res) = tokio::join!(arp_task, mdns_task);
 

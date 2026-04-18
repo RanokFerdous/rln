@@ -119,30 +119,30 @@ This roadmap builds upon the integration plan, layering in architectural milesto
     - [x] Initialize the project and `rusqlite` database schema.
     - [x] Implement CRUD operations for network snapshots (storing MAC, IP, Service Names).
 - **Milestone 1.2: Layer 2 & Layer 3 Scanning**
-    - [ ] Integrate `pnet` and `async-arp`. Implement custom privilege escalation checks (prompting the user gracefully if sudo or `CAP_NET_RAW` is missing).
-    - [ ] Integrate `simple-mdns` for concurrent service discovery.
+    - [x] Integrate `pnet` and `async-arp`. Implement custom privilege escalation checks (prompting the user gracefully if sudo or `CAP_NET_RAW` is missing).
+    - [x] Integrate `simple-mdns` for concurrent service discovery.
 - **Milestone 1.3: The Drift Engine**
-    - [ ] Write the diffing logic. Compare the active network state to the latest SQLite snapshot.
-    - [ ] **Testing:** Mock L2 packets to test drift logic without needing a live, changing network.
+    - [x] Write the diffing logic. Compare the active network state to the latest SQLite snapshot.
+    - [x] **Testing:** Mock L2 packets to test drift logic without needing a live, changing network.
 
 ### Phase 2: Identity & Secure Comms 
 *Focus: Establishing the zero-trust paradigm before adding heavy transfers.*
 
 - **Milestone 2.1: Cryptographic Bootstrapping**
-    - [ ] Implement `ed25519-dalek` to generate a node's Identity Keypair on first boot.
-    - [ ] Save keys to a restricted local config file (e.g., `chmod 600`).
+    - [x] Implement `ed25519-dalek` to generate a node's Identity Keypair on first boot.
+    - [x] Save keys to a restricted local config file (e.g., `chmod 600`).
 - **Milestone 2.2: P2P Initialization**
-    - [ ] Integrate `iroh` or `quinn`. Establish a basic listening state using the generated Peer ID.
-    - [ ] Implement the custom TLS handshake to ensure only recognized Peer IDs can connect.
+    - [x] Integrate `iroh` or `quinn`. Establish a basic listening state using the generated Peer ID.
+    - [x] Implement the custom TLS handshake to ensure only recognized Peer IDs can connect.
 
 ### Phase 3: Visualization & TUI    
 *Focus: Bringing the data to life without blocking the async backend.*
 
 - **Milestone 3.1: Async Event Loop**
-    - [ ] Set up `tokio` channels to funnel discovery events, drift alerts, and connection attempts from background workers to the UI thread.
+    - [x] Set up `tokio` channels to funnel discovery events, drift alerts, and connection attempts from background workers to the UI thread.
 - **Milestone 3.2: Ratatui Dashboard**
-    - [ ] Build the main views: Node List (color-coded by drift status), Active Transfers, and Event Log.
-    - [ ] Integrate `packet-dissector-lldp` data to visually group devices by their connected switch/router.
+    - [x] Build the main views: Node List (color-coded by drift status), Active Transfers, and Event Log.
+    - [x] Integrate `packet-dissector-lldp` data to visually group devices by their connected switch/router.
 
 ### Phase 4: Intelligence & Data Movement   
 *Focus: Advanced inference and high-speed streaming.*
