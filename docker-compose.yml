@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  rln:
+    build: .
+    image: rln:v2.0
+    container_name: rln-navigator
+    # Host networking is MANDATORY for Layer 2 discovery (ARP/NDP)
+    network_mode: host
+    
+    # Required for raw packet crafting (libpnet)
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    
+    # Required for the Ratatui TUI to capture input and display correctly
+    tty: true
+    stdin_open: true
+    
+    volumes:
+      - ./data:/data
+    
+    environment:
+      - RUST_LOG=info
+      - RLN_DATA_DIR=/data
+    
+    # Start in dashboard mode by default
+    command: ["--dashboard"]
+
+    # Security: Drop all other capabilities
+    cap_drop:
+      - ALL
+    # Re-add only what we need
+    privileged: false

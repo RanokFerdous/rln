@@ -1,40 +1,40 @@
 [package]
-name = "rln"
+name = "lan-asin"
 version = "0.2.0"
 edition = "2021"
 description = "Privacy-first, zero-trust network orchestrator for the modern LAN."
 
 [dependencies]
 # Async
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "^1", features = ["full"] }
 async-trait = "0.1"
 
 # Networking & Discovery
-pnet = "0.34"
-async-arp = "0.1"
-simple-mdns = { version = "0.7", features = ["tokio"] }
-oui = "0.6"
+pnet = "0.35"
+async-arp = "0.4"
+simple-mdns = { version = "0.6.3", features = ["async-tokio"] }
+oui = "0.8"
 surge-ping = "0.8"
-packet-dissector-lldp = "0.1"
+packet-dissector-lldp = "0.3"
 
 # Storage
-rusqlite = { version = "0.29", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 
 # Crypto & Identity
-ed25519-dalek = "2.0"
-rand = "0.8"
+ed25519-dalek = "2.2"
+rand = "0.10"
 
 # P2P & Transfer
-iroh = "0.9"
+iroh = "0.98"
 
 # AI Inference
 # ort = "1.14" # Uncomment for performance (requires ONNX runtime)
-tract-onnx = "0.20" # Defaulting to pure-rust tract for easier setup
+tract-onnx = "0.22" # Defaulting to pure-rust tract for easier setup
 
 # UI
-ratatui = "0.23"
-clap = { version = "4.0", features = ["derive"] }
-crossterm = "0.27"
+ratatui = "0.30"
+clap = { version = "4.6", features = ["derive"] }
+crossterm = "0.29"
 
 [dev-dependencies]
-mockall = "0.11"
+mockall = "0.14"
