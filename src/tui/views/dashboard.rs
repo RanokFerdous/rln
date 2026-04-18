@@ -12,8 +12,8 @@ use crate::storage::drift::DriftEvent;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    text::{Line, Span, Text},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -64,7 +64,6 @@ fn draw_topology(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         )));
     } else {
         for (switch_name, topo) in &app.topology {
-            // Switch header row
             items.push(ListItem::new(Line::from(vec![
                 Span::styled("🔌 ", Style::default().fg(Color::Blue)),
                 Span::styled(
@@ -79,7 +78,6 @@ fn draw_topology(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                 ),
             ])));
 
-            // Device rows under this switch
             let last_idx = topo.devices.len().saturating_sub(1);
             for (i, device) in topo.devices.iter().enumerate() {
                 let prefix = if i == last_idx { "  └─ " } else { "  ├─ " };
@@ -103,7 +101,6 @@ fn draw_topology(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         }
     }
 
-    // Drift Alert section
     if !app.active_drift_events.is_empty() {
         items.push(ListItem::new(""));
         items.push(ListItem::new(Span::styled(
@@ -129,11 +126,7 @@ fn draw_topology(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 /// Formats a [`DriftEvent`] into a human-readable (icon, text, color) tuple.
 fn format_drift_event(event: &DriftEvent) -> (&'static str, String, Color) {
     match event {
-        DriftEvent::NewDevice { mac, ip } => (
-            "NEW",
-            format!("{} @ {}", mac, ip),
-            Color::Green,
-        ),
+        DriftEvent::NewDevice { mac, ip } => ("NEW", format!("{} @ {}", mac, ip), Color::Green),
         DriftEvent::IpChanged { mac, old_ip, new_ip } => (
             "CHG",
             format!("{}: {} → {}", mac, old_ip, new_ip),
@@ -144,15 +137,14 @@ fn format_drift_event(event: &DriftEvent) -> (&'static str, String, Color) {
             format!("{} (last seen @ {})", mac, last_ip),
             Color::Red,
         ),
-        DriftEvent::NoChange { mac } => (
-            "OK ",
-            format!("{} — stable", mac),
-            Color::DarkGray,
-        ),
+        DriftEvent::NoChange { mac } => ("OK ", format!("{} — stable", mac), Color::DarkGray),
     }
 }
 
 /// Renders the active P2P transfers panel with progress and speed.
+///
+/// Filenames are capped at 28 chars and Peer IDs at 16 chars to prevent
+/// any single row from wrapping and breaking the fixed-height panel.
 fn draw_transfers(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let mut items: Vec<ListItem> = Vec::new();
 
@@ -163,24 +155,21 @@ fn draw_transfers(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         )));
     } else {
         for t in &app.active_transfers {
-            // Build a simple ASCII progress bar (20 chars wide)
             let filled = (t.progress_pct as usize * 20) / 100;
-            let bar: String = format!(
-                "[{}{}]",
-                "█".repeat(filled),
-                "░".repeat(20 - filled)
-            );
+            let bar = format!("[{}{}]", "█".repeat(filled), "░".repeat(20 - filled));
+
+            // Truncate so the row is guaranteed to fit on one terminal line
+            let fname = truncate(&t.filename, 28);
+            let peer  = truncate(&t.peer_id,  16);
 
             let line = Line::from(vec![
                 Span::styled("📦 ", Style::default()),
                 Span::styled(
-                    format!("{:<30}", &t.filename),
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
+                    format!("{:<28} ", fname),
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!(" {} {}%  ", bar, t.progress_pct),
+                    format!("{} {}%  ", bar, t.progress_pct),
                     Style::default().fg(Color::Cyan),
                 ),
                 Span::styled(
@@ -188,7 +177,7 @@ fn draw_transfers(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::styled(
-                    format!("  → {}", t.peer_id),
+                    format!("  → {}", peer),
                     Style::default().fg(Color::DarkGray),
                 ),
             ]);
@@ -201,28 +190,53 @@ fn draw_transfers(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     f.render_widget(list, area);
 }
 
-/// Renders the system log panel showing the most recent buffered log messages.
+/// Renders the system log panel.
+///
+/// Uses [`Paragraph`] + [`Wrap`] instead of `List` so that long lines
+/// (e.g. 52-char Iroh node ID hashes) wrap *within* the panel boundaries
+/// rather than overflowing into the pane below and breaking the layout.
+/// Logs are displayed newest-first.
 fn draw_logs(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
-    // Show newest logs at the bottom by reversing the deque iterator
-    let items: Vec<ListItem> = app
+    let lines: Vec<Line> = app
         .logs
         .iter()
         .rev()
         .map(|msg| {
             let color = if msg.contains("[ERROR]") || msg.contains("❌") {
                 Color::Red
-            } else if msg.contains("[WARNING]") || msg.contains("[DEGRADED]") || msg.contains("⚠") {
+            } else if msg.contains("[WARNING]")
+                || msg.contains("[DEGRADED]")
+                || msg.contains('⚠')
+            {
                 Color::Yellow
-            } else if msg.contains("✅") || msg.contains("[NETWORK]") {
+            } else if msg.contains('✅') || msg.contains("[NETWORK]") {
                 Color::Green
             } else {
                 Color::White
             };
-            ListItem::new(Span::styled(msg.clone(), Style::default().fg(color)))
+            Line::from(Span::styled(msg.clone(), Style::default().fg(color)))
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(" System Logs (newest first) "));
-    f.render_widget(list, area);
+    let paragraph = Paragraph::new(Text::from(lines))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" System Logs (newest first) "),
+        )
+        .wrap(Wrap { trim: true }); // long lines wrap inside the widget, not outside
+
+    f.render_widget(paragraph, area);
+}
+
+/// Truncates `s` to at most `max_chars` Unicode scalar values.
+/// Appends a `…` ellipsis character if the string was shortened.
+fn truncate(s: &str, max_chars: usize) -> String {
+    let mut chars = s.chars();
+    let head: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{}…", head)
+    } else {
+        head
+    }
 }

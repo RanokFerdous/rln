@@ -35,12 +35,7 @@ impl DeviceClassifier {
             .and_then(|m| m.into_runnable())
             .ok();
 
-        if model.is_none() {
-            eprintln!("⚠️ [ML] ONNX model not found — fingerprinting in fallback mode.");
-        } else {
-            eprintln!("🧠 [ML] Fingerprinting model loaded successfully.");
-        }
-
+        // Model is loaded lazily; caller can inspect self.model.is_some() if needed
         Self { model }
     }
 

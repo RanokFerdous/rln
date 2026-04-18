@@ -6,7 +6,6 @@ use simple_mdns::InstanceInformation;
 use std::time::Duration;
 
 pub async fn run_mdns_scan() -> Result<Vec<ScannedDevice>> {
-    println!("🌐 [L3] Starting mDNS discovery...");
 
     let instance_info = InstanceInformation::new("null".to_string());
     let discovery = ServiceDiscovery::new(instance_info, "_http._tcp.local", 60)?;

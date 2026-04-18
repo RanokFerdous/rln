@@ -37,8 +37,6 @@ pub async fn run_arp_sweep(iface: &NetworkInterface) -> Result<Vec<ScannedDevice
     use pnet::util::MacAddr;
     use std::net::Ipv4Addr;
 
-    println!("📡 [L2] Starting ARP sweep on interface: {}", iface.name);
-
     let network = iface.ips.iter().find(|ip| ip.is_ipv4());
     let (our_ip, network) = match network {
         Some(pnet::ipnetwork::IpNetwork::V4(net)) => (net.ip(), net),
