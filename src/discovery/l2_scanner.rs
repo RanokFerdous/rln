@@ -1,11 +1,14 @@
 //! Layer 2 ARP sweep and interface discovery for the RLN network scanner.
 //!
 //! Performs an ARP sweep across the active interface's subnet and returns a
-//! list of [`ScannedDevice`]s. Each discovered device is enriched with a
-//! **vendor name** sourced from the bundled `mac_oui` Wireshark OUI database
-//! (`mac_oui::Oui::default()`), which is loaded once per scan at the start of
-//! [`run_arp_sweep`]. This gives the topology panel a human-readable label
-//! (e.g. "Apple, Inc." or "Raspberry Pi Trading Ltd.") instead of "Unknown".
+//! list of [`ScannedDevice`]s. Uses a **Progressive Discovery** pattern via
+//! [`ScanMode`] to provide ultra-fast initial discovery and deep, staggered
+//! background scans to detect sleeping mobile/IoT devices.
+//!
+//! Each discovered device is enriched with a **vendor name** sourced from the
+//! bundled `mac_oui` Wireshark OUI database (`mac_oui::Oui::default()`), which
+//! is loaded once per scan at the start of [`run_arp_sweep`]. The host device
+//! running RLN is also explicitly added to the list as `(This Device)`.
 //!
 //! Requires `CAP_NET_RAW` on Linux or Administrator on Windows for raw socket
 //! access. A Windows stub is provided that returns an empty list and logs a
@@ -41,10 +44,19 @@ pub fn verify_privileges(iface: &NetworkInterface) -> Result<()> {
     }
 }
 
+/// The intensity of the Layer 2 scan.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ScanMode {
+    /// Instant feedback. Good for wired or currently active devices.
+    Quick,
+    /// Deep scan. Longer timeouts and staggers to catch sleeping WiFi devices.
+    Thorough,
+}
+
 /// Performs an ARP sweep across the interface subnet.
 /// This function is only available on Unix-like operating systems.
 #[cfg(unix)]
-pub async fn run_arp_sweep(iface: &NetworkInterface) -> Result<Vec<ScannedDevice>> {
+pub async fn run_arp_sweep(iface: &NetworkInterface, mode: ScanMode) -> Result<Vec<ScannedDevice>> {
     use async_arp::{Client, ClientConfigBuilder, ClientSpinner, RequestInputBuilder};
     use pnet::util::MacAddr;
     use std::net::Ipv4Addr;
@@ -60,11 +72,16 @@ pub async fn run_arp_sweep(iface: &NetworkInterface) -> Result<Vec<ScannedDevice
         bail!("Interface does not have a MAC address");
     }
 
+    let (timeout_ms, retries, chunk_size, stagger_ms) = match mode {
+        ScanMode::Quick => (400, 1, 128, 20),
+        ScanMode::Thorough => (1200, 3, 32, 150),
+    };
+
     let config = ClientConfigBuilder::new(&iface.name)
-        .with_response_timeout(std::time::Duration::from_millis(500))
+        .with_response_timeout(std::time::Duration::from_millis(timeout_ms))
         .build();
     let client = Client::new(config)?;
-    let spinner = ClientSpinner::new(client).with_retries(1);
+    let spinner = ClientSpinner::new(client).with_retries(retries);
 
     let mut requests = Vec::new();
     let net_u32 = u32::from(network.network());
@@ -88,7 +105,14 @@ pub async fn run_arp_sweep(iface: &NetworkInterface) -> Result<Vec<ScannedDevice
         }
     }
 
-    let outcomes = spinner.request_batch(&requests).await?;
+    let mut outcomes = Vec::new();
+    for chunk in requests.chunks(chunk_size) {
+        if let Ok(res) = spinner.request_batch(chunk).await {
+            outcomes.extend(res);
+            // Small stagger to prevent broadcast storms / dropping packets on AP
+            tokio::time::sleep(std::time::Duration::from_millis(stagger_ms)).await;
+        }
+    }
     let mut devices = Vec::new();
     let db = mac_oui::Oui::default().ok();
 
@@ -122,7 +146,11 @@ pub async fn run_arp_sweep(iface: &NetworkInterface) -> Result<Vec<ScannedDevice
     for task in dns_tasks {
         if let Ok((mac_str, ip_str, dns_name)) = task.await {
             let oui_name = db.as_ref().and_then(|oui_db| {
-                oui_db.lookup_by_mac(&mac_str).ok().flatten().map(|res| res.company_name.clone())
+                oui_db
+                    .lookup_by_mac(&mac_str)
+                    .ok()
+                    .flatten()
+                    .map(|res| res.company_name.clone())
             });
 
             let service_name = match (dns_name, oui_name) {
@@ -140,13 +168,21 @@ pub async fn run_arp_sweep(iface: &NetworkInterface) -> Result<Vec<ScannedDevice
         }
     }
 
+    // 3. Always include this local device itself in the topology
+    let local_hostname = gethostname::gethostname().into_string().unwrap_or_else(|_| "unknown-pc".to_owned());
+    devices.push(ScannedDevice {
+        mac_address: format!("{}", our_mac),
+        ip_address: format!("{}", our_ip),
+        service_name: Some(format!("{} (This Device)", local_hostname)),
+    });
+
     Ok(devices)
 }
 
 /// Stub for Windows: ARP sweep is not supported without Npcap/WinPcap.
 /// Returns an empty device list and logs a warning.
 #[cfg(target_os = "windows")]
-pub async fn run_arp_sweep(_iface: &NetworkInterface) -> Result<Vec<ScannedDevice>> {
+pub async fn run_arp_sweep(_iface: &NetworkInterface, _mode: ScanMode) -> Result<Vec<ScannedDevice>> {
     eprintln!("[L2] ARP sweep is not supported on Windows without Npcap/WinPcap. Skipping.");
     Ok(vec![])
 }

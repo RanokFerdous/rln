@@ -13,7 +13,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, BorderType, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -61,7 +61,7 @@ fn draw_header(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(Color::Cyan))
                 .title(" RLN Orchestrator ")
-                .title_alignment(Alignment::Center)
+                .title_alignment(Alignment::Center),
         );
     f.render_widget(header, area);
 }
@@ -94,14 +94,15 @@ fn draw_topology(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
             let last_idx = topo.devices.len().saturating_sub(1);
             for (i, device) in topo.devices.iter().enumerate() {
-                let prefix = if i == last_idx { "  └─ " } else { "  ├─ " };
+                let prefix = if i == last_idx {
+                    "  └─ "
+                } else {
+                    "  ├─ "
+                };
                 let hostname = device.hostname.as_deref().unwrap_or("Unknown");
                 items.push(ListItem::new(Line::from(vec![
                     Span::styled(prefix, Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        format!("{} ", hostname),
-                        Style::default().fg(Color::Green),
-                    ),
+                    Span::styled(format!("{} ", hostname), Style::default().fg(Color::Green)),
                     Span::styled(
                         format!("({})  ", device.ip_address),
                         Style::default().fg(Color::Cyan),
@@ -146,7 +147,11 @@ fn draw_topology(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 fn format_drift_event(event: &DriftEvent) -> (&'static str, String, Color) {
     match event {
         DriftEvent::NewDevice { mac, ip } => ("NEW", format!("{} @ {}", mac, ip), Color::Green),
-        DriftEvent::IpChanged { mac, old_ip, new_ip } => (
+        DriftEvent::IpChanged {
+            mac,
+            old_ip,
+            new_ip,
+        } => (
             "CHG",
             format!("{}: {} → {}", mac, old_ip, new_ip),
             Color::Yellow,
@@ -179,13 +184,15 @@ fn draw_transfers(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
             // Truncate so the row is guaranteed to fit on one terminal line
             let fname = truncate(&t.filename, 28);
-            let peer  = truncate(&t.peer_id,  8);
+            let peer = truncate(&t.peer_id, 8);
 
             let line = Line::from(vec![
                 Span::styled("📦 ", Style::default()),
                 Span::styled(
                     format!("{:<28} ", fname),
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     format!("{} {}%  ", bar, t.progress_pct),
@@ -282,7 +289,9 @@ fn draw_send_overlay(f: &mut Frame, app: &App) {
     let prompt = Line::from(vec![
         Span::styled(
             "Peer ID/Name: ",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             "My-Laptop or b09ceb10 ",
@@ -292,22 +301,25 @@ fn draw_send_overlay(f: &mut Frame, app: &App) {
     let example = Line::from(vec![
         Span::styled(
             "Filepath    : ",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            "/home/user/doc.pdf",
-            Style::default().fg(Color::DarkGray),
-        ),
+        Span::styled("/home/user/doc.pdf", Style::default().fg(Color::DarkGray)),
     ]);
     let divider = Line::from("");
     let input_line = Line::from(vec![
         Span::styled(
             " 🚀 ",
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             app.input_buffer.clone(),
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ),
         // Blinking cursor block
         Span::styled(

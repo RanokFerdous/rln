@@ -18,7 +18,7 @@ fn test_upsert_and_retrieve_devices() {
     // Insert a new device
     db.upsert_device("00:1A:2B:3C:4D:5E", "192.168.1.10", Some("Router"))
         .unwrap();
-    
+
     let snapshots = db.get_all_snapshots().unwrap();
     assert_eq!(snapshots.len(), 1);
     assert_eq!(snapshots[0].mac_address, "00:1A:2B:3C:4D:5E");
@@ -35,7 +35,8 @@ fn test_upsert_and_retrieve_devices() {
     assert_eq!(updated[0].service_name.as_deref(), Some("Gateway"));
 
     // Insert a SECOND device
-    db.upsert_device("11:22:33:44:55:66", "10.0.0.1", None).unwrap();
+    db.upsert_device("11:22:33:44:55:66", "10.0.0.1", None)
+        .unwrap();
     let final_snapshots = db.get_all_snapshots().unwrap();
     assert_eq!(final_snapshots.len(), 2);
 }

@@ -32,11 +32,18 @@ pub enum DriftEvent {
 }
 
 /// Compares historical database snapshots against a fresh network scan.
+///
+/// **5-Minute Grace Period:** To handle mobile devices (like Android/iOS) that
+/// aggressively sleep their WiFi chips, this function implements a grace period.
+/// If a device is in the DB but misses a ping scan, it will NOT trigger a
+/// `DeviceOffline` event unless it has been entirely missing for over 5 minutes.
+/// Instead, it yields a `NoChange` event so the TUI topology stays stable.
 pub fn calculate_drift(
     historical: &[DeviceSnapshot],
     current: &[ScannedDevice],
 ) -> Vec<DriftEvent> {
     let mut events = Vec::new();
+    let now = chrono::Utc::now();
 
     // Hash the current scan for O(1) lookups by MAC address
     let mut current_map: HashMap<&str, &ScannedDevice> = current
@@ -59,11 +66,28 @@ pub fn calculate_drift(
                 });
             }
         } else {
-            // Device was in DB but not in the current scan
-            events.push(DriftEvent::DeviceOffline {
-                mac: hist.mac_address.clone(),
-                last_ip: hist.ip_address.clone(),
-            });
+            // Device was in DB but not in the current scan.
+            // Check if it's actually been gone for more than 5 minutes (WiFi sleep grace period)
+            if let Ok(last_seen_dt) = chrono::DateTime::parse_from_rfc3339(&hist.last_seen) {
+                let duration_since = now.signed_duration_since(last_seen_dt.with_timezone(&chrono::Utc));
+                if duration_since.num_minutes() > 5 {
+                    // Only alert as offline if it exceeded the 5 minute grace period
+                    events.push(DriftEvent::DeviceOffline {
+                        mac: hist.mac_address.clone(),
+                        last_ip: hist.ip_address.clone(),
+                    });
+                } else {
+                    // It's in the grace period, pretend there was NoChange so the TUI keeps it
+                    events.push(DriftEvent::NoChange {
+                        mac: hist.mac_address.clone(),
+                    });
+                }
+            } else {
+                events.push(DriftEvent::DeviceOffline {
+                    mac: hist.mac_address.clone(),
+                    last_ip: hist.ip_address.clone(),
+                });
+            }
         }
     }
 
@@ -103,11 +127,14 @@ mod tests {
 
     #[test]
     fn test_drift_detection() {
+        let now = chrono::Utc::now().to_rfc3339();
+        let old = (chrono::Utc::now() - chrono::Duration::minutes(6)).to_rfc3339();
+
         // Setup: What the DB remembers
         let historical = vec![
-            mock_db_snapshot("00:1A:2B:3C:4D:5E", "192.168.1.10"), // Will stay the same
-            mock_db_snapshot("AA:BB:CC:DD:EE:FF", "192.168.1.20"), // Will change IP
-            mock_db_snapshot("11:22:33:44:55:66", "192.168.1.30"), // Will go offline
+            DeviceSnapshot { mac_address: "00:1A:2B:3C:4D:5E".to_string(), ip_address: "192.168.1.10".to_string(), service_name: None, last_seen: now.clone() },
+            DeviceSnapshot { mac_address: "AA:BB:CC:DD:EE:FF".to_string(), ip_address: "192.168.1.20".to_string(), service_name: None, last_seen: now.clone() },
+            DeviceSnapshot { mac_address: "11:22:33:44:55:66".to_string(), ip_address: "192.168.1.30".to_string(), service_name: None, last_seen: old.clone() },
         ];
 
         // Setup: What our L2/L3 scanners just found

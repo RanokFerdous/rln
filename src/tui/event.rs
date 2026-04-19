@@ -17,7 +17,9 @@ pub enum AppEvent {
     /// File transfer progress update.
     TransferProgress(crate::app::TransferState),
     /// LLDP Switch network updates.
-    TopologyUpdate(std::collections::HashMap<String, crate::intelligence::topology::SwitchTopology>),
+    TopologyUpdate(
+        std::collections::HashMap<String, crate::intelligence::topology::SwitchTopology>,
+    ),
     /// A new RLN peer announced itself over mDNS. Maps (short_name/hostname, Full_PeerId).
     RlnPeerDiscovered(std::collections::HashMap<String, String>),
 }

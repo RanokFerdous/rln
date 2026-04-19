@@ -18,10 +18,10 @@
 ## 🧩 2. Core Functional Modules
 
 ### 🔍 A. The Discovery Engine (The "Detect")
-- **Dual-Stack Scanner:** Implements **ARP** (IPv4) via `async-arp` and **NDP** (IPv6 Neighbor Discovery) via `pnet`.
-- **Hostname & Vendor Resolution:** On each ARP IPv4 response, the scanner performs a concurrent Reverse DNS (PTR) query to fetch the device's customized DHCP name. If unavailable, it falls back to querying the bundled `mac_oui` Wireshark database to resolve the hardware manufacturer.
+- **Progressive Dual-Stack Scanner:** Implements **ARP** (IPv4) via `async-arp` and **NDP** (IPv6) via `pnet`. Uses a dual-mode approach: a 1-second "Quick Scan" on startup for instant UI gratification, followed by continuous "Thorough Scans" in the background (staggered chunks with higher timeouts) to catch sleeping mobile/IoT devices.
+- **Hostname & Vendor Resolution:** Performs concurrent Reverse DNS (PTR) queries for DHCP names, falls back to the bundled `mac_oui` database for hardware vendor lookup, and automatically identifies the local host (`This Device`).
 - **Snapshot Engine:** Uses `rusqlite` to maintain a local database of "Known Good" network states.
-    - *Drift Alert:* Automated diffing between current scans and SQLite snapshots.
+    - *Drift Alert:* Diffing between current scans and SQLite snapshots, utilizing a **5-minute Grace Period** to prevent sleeping WiFi devices from triggering false "Offline" UI spam.
 - **Identity Mapping:** Correlates OUI vendors and mDNS services (via `simple-mdns`) to provide human-readable names.
 
 ### 🧠 B. The Diagnostic & Intelligence Suite (The "Analyze")
@@ -122,8 +122,9 @@ rln/
     - [x] Integrate `simple-mdns` for concurrent service discovery.
     - [x] Integrate `dns-lookup` for Reverse DNS resolution of DHCP hostnames.
     - [x] Integrate `mac_oui` (with bundled Wireshark OUI DB) for automatic vendor name resolution on ARP responses.
-- **Milestone 1.3: The Drift Engine**
+- **Milestone 1.3: The Drift Engine & Persistence**
     - [x] Write the diffing logic. Compare the active network state to the latest SQLite snapshot.
+    - [x] Implement a 5-minute UI grace period to protect sleeping mobile devices from triggering offline alerts.
     - [x] **Testing:** Mock L2 packets to test drift logic without a live, changing network.
 
 ### Phase 2: Identity & Secure Comms

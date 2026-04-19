@@ -1,0 +1,1 @@
+fn main() { let ip = std::net::Ipv4Addr::new(192, 168, 10, 0); let net_u32 = u32::from(ip); println!("IP0: {}", std::net::Ipv4Addr::from(net_u32)); println!("IP1: {}", std::net::Ipv4Addr::from(net_u32 + 1)); }

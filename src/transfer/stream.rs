@@ -20,13 +20,10 @@
 //! ## Iroh 0.98 API Notes
 //! - `Endpoint::builder(presets::N0)` replaces the old zero-arg builder
 //! - `endpoint.id()` returns `EndpointId` (replaces `node_id()` → `NodeId`)
-//! - `connection.remote_id()` replaces `get_remote_node_id(&conn)` 
+//! - `connection.remote_id()` replaces `get_remote_node_id(&conn)`
 //! - `send_stream.finish()` is now synchronous (no `?` needed for async)
 use anyhow::{bail, Context, Result};
-use iroh::{
-    endpoint::presets,
-    Endpoint, EndpointId, SecretKey,
-};
+use iroh::{endpoint::presets, Endpoint, EndpointId, SecretKey};
 use std::sync::Arc;
 
 /// The ALPN identifier for the RLN protocol.
@@ -208,7 +205,9 @@ impl P2pNode {
         let final_hash = hasher.finalize();
         send_stream.write_all(final_hash.as_bytes()).await?;
         // In iroh 0.98, finish() is still synchronous
-        send_stream.finish().context("Failed to finish send stream")?;
+        send_stream
+            .finish()
+            .context("Failed to finish send stream")?;
 
         let _ = tx
             .send(crate::tui::event::AppEvent::Log(format!(
@@ -279,8 +278,7 @@ async fn handle_incoming_connection(
     let mut last_ui_update = Instant::now();
 
     while received_bytes < file_size {
-        let to_read =
-            std::cmp::min(buffer.len() as u64, file_size - received_bytes) as usize;
+        let to_read = std::cmp::min(buffer.len() as u64, file_size - received_bytes) as usize;
 
         match recv_stream.read_exact(&mut buffer[..to_read]).await {
             Ok(_) => {
@@ -291,8 +289,7 @@ async fn handle_incoming_connection(
                     let elapsed = start_time.elapsed().as_secs_f64();
                     let speed_mbps =
                         (received_bytes as f64 * 8.0) / (elapsed * 1_000_000.0).max(1.0);
-                    let progress_pct =
-                        ((received_bytes as f64 / file_size as f64) * 100.0) as u8;
+                    let progress_pct = ((received_bytes as f64 / file_size as f64) * 100.0) as u8;
 
                     let _ = tx
                         .send(crate::tui::event::AppEvent::TransferProgress(

@@ -13,15 +13,21 @@ pub fn setup_mdns(peer_id: &str) -> Result<ServiceDiscovery> {
         Err(_) => "unknown-pc".to_owned(),
     };
     let mut info = InstanceInformation::new(hostname);
-    info.attributes.insert("peer_id".to_string(), Some(peer_id.to_string()));
-    
+    info.attributes
+        .insert("peer_id".to_string(), Some(peer_id.to_string()));
+
     ServiceDiscovery::new(info, "_rln._udp.local", 60)
         .context("Failed to create mDNS Service Discovery")
 }
 
 /// Runs a single pass to fetch known `_rln._udp.local` services.
 /// It uses the long-lived ServiceDiscovery instance so we continually rebroadcast our presence.
-pub async fn run_mdns_scan_step(discovery: &ServiceDiscovery) -> Result<(Vec<ScannedDevice>, std::collections::HashMap<String, String>)> {
+pub async fn run_mdns_scan_step(
+    discovery: &ServiceDiscovery,
+) -> Result<(
+    Vec<ScannedDevice>,
+    std::collections::HashMap<String, String>,
+)> {
     // Allow time for devices to respond to the multicast query
     tokio::time::sleep(Duration::from_secs(3)).await;
 
@@ -32,15 +38,15 @@ pub async fn run_mdns_scan_step(discovery: &ServiceDiscovery) -> Result<(Vec<Sca
     for service in services {
         // Find the first IPv4 address if available
         let ip_addr = service.ip_addresses.iter().find(|ip| ip.is_ipv4());
-        
+
         if let Some(std::net::IpAddr::V4(ipv4)) = ip_addr {
             let mut name = service.unescaped_instance_name();
-            
+
             // If the peer exposes a peer_id as a TXT attribute, inject it into the service name mapped
             if let Some(Some(peer_id)) = service.attributes.get("peer_id") {
                 let shortcode = format!("{}", &peer_id[..8.min(peer_id.len())]);
                 name = format!("{} [{}]", name, shortcode);
-                
+
                 // Map the full Peer ID locally for ease of use via shortcuts
                 rln_peers.insert(name.clone(), peer_id.clone());
                 rln_peers.insert(shortcode, peer_id.clone());

@@ -27,7 +27,9 @@ pub async fn probe_host(ip: IpAddr) -> Result<(u32, u32, u32)> {
 /// Returns a neutral set of metrics indicating no data available.
 #[cfg(target_os = "windows")]
 pub async fn probe_host(_ip: IpAddr) -> Result<(u32, u32, u32)> {
-    eprintln!("[PROBE] Raw ICMP probing is not supported on Windows without Npcap. Returning defaults.");
+    eprintln!(
+        "[PROBE] Raw ICMP probing is not supported on Windows without Npcap. Returning defaults."
+    );
     Ok((128, 65535, 0)) // Windows TTL default, generic window, no ports known
 }
 

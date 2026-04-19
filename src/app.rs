@@ -61,8 +61,9 @@ impl App {
     /// Creates a new `App` instance with sensible defaults.
     pub fn new(known_devices: usize) -> Self {
         let mut logs = VecDeque::with_capacity(Self::MAX_LOGS + 1);
-        logs.push_back("[SYSTEM] RLN v2.0 Initialized...".to_string());
-        logs.push_back("[SYSTEM] Press 's' to send a file to a peer.".to_string());
+        let now = chrono::Local::now().format("%H:%M:%S");
+        logs.push_back(format!("{} [SYSTEM] RLN v2.0 Initialized...", now));
+        logs.push_back(format!("{} [SYSTEM] Press 's' to send a file to a peer.", now));
         Self {
             is_running: true,
             input_mode: InputMode::Normal,
@@ -88,7 +89,8 @@ impl App {
         if self.logs.len() >= Self::MAX_LOGS {
             self.logs.pop_front();
         }
-        self.logs.push_back(message);
+        let now = chrono::Local::now().format("%H:%M:%S");
+        self.logs.push_back(format!("{} {}", now, message));
     }
 }
 
@@ -104,8 +106,8 @@ mod tests {
             app.add_log(format!("Log message {}", i));
         }
         assert_eq!(app.logs.len(), 50);
-        assert_eq!(app.logs[0], "Log message 10");
-        assert_eq!(app.logs.back().unwrap(), "Log message 59");
+        assert!(app.logs[0].contains("Log message 10"));
+        assert!(app.logs.back().unwrap().contains("Log message 59"));
     }
 
     #[test]

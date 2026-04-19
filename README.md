@@ -10,10 +10,10 @@
 
 ## ✨ Key Features
 
-- **🔍 Hybrid Discovery**: Simultaneous Layer 2 (ARP/NDP) and Layer 3 (mDNS) scanning for full IPv4 and IPv6 coverage.
-- **🏷️ Device Naming**: Resolves custom DHCP hostnames via Reverse DNS, with an automatic fallback to device vendor lookup via the bundled OUI database.
+- **🔍 Progressive Discovery**: Automatically scales Layer 2 ARP scan intensity. Fast, lightweight sweeps for instant UI feedback combined with deep, staggered background polling to reliably detect sleeping mobile and IoT devices without network congestion.
+- **🏷️ Device Naming**: Resolves custom DHCP hostnames via Reverse DNS, with an automatic fallback to device vendor lookup via the bundled OUI database. Identifies the host running RLN natively.
 - **🕸️ Switch Topology**: Live LLDP frame capture to intelligently map out managed network switches and port connections.
-- **📈 Stateful Monitoring**: Track network "drift" by comparing current scans against historical SQLite snapshots.
+- **📈 Stateful Monitoring**: Track network "drift" by comparing current scans against historical SQLite snapshots. Features a smart 5-minute UI grace-period to prevent sleeping Android/iOS devices from triggering false-positive alerts.
 - **🛡️ Zero-Trust Identity**: Permanent, cryptographic Peer IDs (Ed25519) powered by `iroh`'s built-in key primitives.
 - **🧠 Intelligent Fingerprinting**: Local ML models (via `tract`) identify device types based on network behavior.
 - **🚀 High-Speed Streaming**: Encrypted, resilient file movement using QUIC-based P2P streaming (via `iroh` v0.98), now supporting mDNS short-code shorthand for Peer IDs!
@@ -116,8 +116,8 @@ RLN uses `iroh`'s native Ed25519 key primitives (`iroh::SecretKey` / `iroh::Publ
 In the TUI, your node's `EndpointId` is displayed in the System Logs at startup. Other nodes use this ID (or its generated 8-character device shortcode via mDNS if operating on the local network) to dial you directly for file transfers:
 
 ```text
-[ID] Peer ID: b09ceb10b3ca3e0aca54dace1998ba495911c5780dcd69b7307fb6bbd945504d
-[P2P] Node online. ID: b09ceb10b3ca3e0aca54dace1998ba495911c5780dcd69b7307fb6bbd945504d
+09:24:12 [ID] Peer ID: b09ceb10b3ca3e0aca54dace1998ba495911c5780dcd69b7307fb6bbd945504d
+09:24:12 [P2P] Node online. ID: b09ceb10b3ca3e0aca54dace1998ba495911c5780dcd69b7307fb6bbd945504d
 ```
 
 To send a file, press `s` to open the modal overlay, then type either your target's friendly name (`My-Laptop`), shortcode (`b09ceb10`), or full peer ID, and the file path:

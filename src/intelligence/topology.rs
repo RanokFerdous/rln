@@ -7,7 +7,7 @@
 //! The current implementation provides a deterministic mock that demonstrates the
 //! expected data shape for UI development and integration testing.
 use pnet::datalink::{self, Channel, NetworkInterface};
-use pnet::packet::ethernet::{EthernetPacket, EtherTypes};
+use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::Packet;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -36,7 +36,10 @@ pub struct SwitchTopology {
 
 /// Scans for live LLDP advertisements on the given interface for a specified duration.
 /// Parses the 802.1AB TLVs to extract the switch name and port ID.
-pub async fn run_lldp_scan(iface: &NetworkInterface, listen_duration: Duration) -> HashMap<String, SwitchTopology> {
+pub async fn run_lldp_scan(
+    iface: &NetworkInterface,
+    listen_duration: Duration,
+) -> HashMap<String, SwitchTopology> {
     let mut topology = HashMap::new();
     let config = datalink::Config {
         read_timeout: Some(Duration::from_millis(500)),
@@ -66,7 +69,7 @@ pub async fn run_lldp_scan(iface: &NetworkInterface, listen_duration: Duration) 
 
                         let switch = sys_name.unwrap_or_else(|| "Unknown Switch".to_string());
                         let port = port_id.unwrap_or_else(|| "Unknown Port".to_string());
-                        
+
                         local_map.entry(switch.clone()).or_insert(SwitchTopology {
                             switch_name: switch,
                             port_id: port,
@@ -77,7 +80,9 @@ pub async fn run_lldp_scan(iface: &NetworkInterface, listen_duration: Duration) 
             }
         }
         local_map
-    }).await.unwrap_or_default();
+    })
+    .await
+    .unwrap_or_default();
 
     // Extend topology with the captured results
     topology.extend(results);
@@ -91,23 +96,28 @@ pub fn parse_lldp_payload(payload: &[u8]) -> (Option<String>, Option<String>) {
 
     let mut i = 0;
     while i + 2 <= payload.len() {
-        let header = u16::from_be_bytes([payload[i], payload[i+1]]);
+        let header = u16::from_be_bytes([payload[i], payload[i + 1]]);
         let t_type = (header >> 9) & 0x7F;
         let t_len = (header & 0x1FF) as usize;
 
         i += 2;
-        if i + t_len > payload.len() { break; }
+        if i + t_len > payload.len() {
+            break;
+        }
 
         match t_type {
             0 => break, // End of LLDPDU
-            2 => { // Port ID
+            2 => {
+                // Port ID
                 if t_len > 1 {
                     // Skip subtype byte, just take the raw string/bytes
-                    port_id = Some(String::from_utf8_lossy(&payload[i+1..i+t_len]).into_owned());
+                    port_id =
+                        Some(String::from_utf8_lossy(&payload[i + 1..i + t_len]).into_owned());
                 }
             }
-            5 => { // System Name
-                sys_name = Some(String::from_utf8_lossy(&payload[i..i+t_len]).into_owned());
+            5 => {
+                // System Name
+                sys_name = Some(String::from_utf8_lossy(&payload[i..i + t_len]).into_owned());
             }
             _ => {}
         }
@@ -124,18 +134,18 @@ mod tests {
     #[test]
     fn test_parse_lldp_payload_valid() {
         let mut payload = Vec::new();
-        
+
         // Port ID TLV (Type 2, Length 5) -> header 0x0405. Data: subtype 0x07, "eth0"
         payload.extend_from_slice(&[0x04, 0x05, 0x07, b'e', b't', b'h', b'0']);
-        
+
         // System Name TLV (Type 5, Length 6) -> header 0x0A06. Data: "Switch"
         payload.extend_from_slice(&[0x0A, 0x06, b'S', b'w', b'i', b't', b'c', b'h']);
-        
+
         // End of LLDPDU TLV (Type 0, Length 0) -> header 0x0000.
         payload.extend_from_slice(&[0x00, 0x00]);
 
         let (sys_name, port_id) = parse_lldp_payload(&payload);
-        
+
         assert_eq!(sys_name.as_deref(), Some("Switch"));
         assert_eq!(port_id.as_deref(), Some("eth0"));
     }
@@ -143,13 +153,13 @@ mod tests {
     #[test]
     fn test_parse_lldp_payload_incomplete() {
         let mut payload = Vec::new();
-        
+
         // Port ID TLV (Type 2, Length 10) but string ends early
         payload.extend_from_slice(&[0x04, 0x0A, 0x07, b'e', b't', b'h', b'0']);
 
         // Should return cleanly without panicking
         let (sys_name, port_id) = parse_lldp_payload(&payload);
-        
+
         // Since length 10 wasn't satisfied, it should break and return None
         assert_eq!(sys_name, None);
         assert_eq!(port_id, None);
