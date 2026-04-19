@@ -19,7 +19,7 @@
 
 ### 🔍 A. The Discovery Engine (The "Detect")
 - **Dual-Stack Scanner:** Implements **ARP** (IPv4) via `async-arp` and **NDP** (IPv6 Neighbor Discovery) via `pnet`.
-- **OUI Vendor Lookup:** On each ARP response, the scanner queries the bundled `mac_oui` Wireshark database to resolve the device manufacturer name. This appears as the hostname in the topology panel when no mDNS name is available.
+- **Hostname & Vendor Resolution:** On each ARP IPv4 response, the scanner performs a concurrent Reverse DNS (PTR) query to fetch the device's customized DHCP name. If unavailable, it falls back to querying the bundled `mac_oui` Wireshark database to resolve the hardware manufacturer.
 - **Snapshot Engine:** Uses `rusqlite` to maintain a local database of "Known Good" network states.
     - *Drift Alert:* Automated diffing between current scans and SQLite snapshots.
 - **Identity Mapping:** Correlates OUI vendors and mDNS services (via `simple-mdns`) to provide human-readable names.
@@ -120,6 +120,7 @@ rln/
 - **Milestone 1.2: Layer 2 & Layer 3 Scanning**
     - [x] Integrate `pnet` and `async-arp`. Implement privilege escalation checks.
     - [x] Integrate `simple-mdns` for concurrent service discovery.
+    - [x] Integrate `dns-lookup` for Reverse DNS resolution of DHCP hostnames.
     - [x] Integrate `mac_oui` (with bundled Wireshark OUI DB) for automatic vendor name resolution on ARP responses.
 - **Milestone 1.3: The Drift Engine**
     - [x] Write the diffing logic. Compare the active network state to the latest SQLite snapshot.
@@ -143,7 +144,7 @@ rln/
     - [x] `AppEvent::NetworkUpdate` now carries both `DriftEvent`s and raw `ScannedDevice`s for live topology building.
 - **Milestone 3.2: Ratatui Dashboard**
     - [x] Build the main views: Network Topology (LLDP + live scan), Active Transfers, and Event Log.
-    - [x] Topology panel now dynamically populated from live ARP + mDNS scan results (no more mock data).
+    - [x] Topology panel now dynamically populated from live ARP, mDNS, and continuous background LLDP scan results (removed mock topologies).
 
 ### Phase 4: Intelligence & Data Movement
 *Focus: Advanced inference and high-speed streaming.*

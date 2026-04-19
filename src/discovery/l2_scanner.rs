@@ -92,20 +92,48 @@ pub async fn run_arp_sweep(iface: &NetworkInterface) -> Result<Vec<ScannedDevice
     let mut devices = Vec::new();
     let db = mac_oui::Oui::default().ok();
 
+    // 1. Perform Reverse DNS lookups concurrently
+    let mut dns_tasks = Vec::new();
     for outcome in outcomes {
         if let Ok(arp) = outcome.response_result {
+            let ip_addr = std::net::IpAddr::V4(arp.sender_proto_addr);
             let mac_str = format!("{}", arp.sender_hw_addr);
-            
-            let mut service_name = None;
-            if let Some(oui_db) = &db {
-                if let Ok(Some(res)) = oui_db.lookup_by_mac(&mac_str) {
-                    service_name = Some(res.company_name.clone());
+            let ip_str = format!("{}", arp.sender_proto_addr);
+
+            dns_tasks.push(tokio::spawn(async move {
+                let ip_str_clone = ip_str.clone();
+                let name = tokio::task::spawn_blocking(move || {
+                    if let Ok(n) = dns_lookup::lookup_addr(&ip_addr) {
+                        if !n.is_empty() && n != ip_str_clone && !n.starts_with("localhost") {
+                            return Some(n);
+                        }
+                    }
+                    None
+                })
+                .await
+                .unwrap_or(None);
+
+                (mac_str, ip_str, name)
+            }));
+        }
+    }
+
+    // 2. Resolve final names, falling back to OUI
+    for task in dns_tasks {
+        if let Ok((mac_str, ip_str, dns_name)) = task.await {
+            let mut service_name = dns_name;
+
+            if service_name.is_none() {
+                if let Some(oui_db) = &db {
+                    if let Ok(Some(res)) = oui_db.lookup_by_mac(&mac_str) {
+                        service_name = Some(res.company_name.clone());
+                    }
                 }
             }
 
             devices.push(ScannedDevice {
                 mac_address: mac_str,
-                ip_address: format!("{}", arp.sender_proto_addr),
+                ip_address: ip_str,
                 service_name,
             });
         }

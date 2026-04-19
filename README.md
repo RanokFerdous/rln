@@ -11,7 +11,8 @@
 ## ✨ Key Features
 
 - **🔍 Hybrid Discovery**: Simultaneous Layer 2 (ARP/NDP) and Layer 3 (mDNS) scanning for full IPv4 and IPv6 coverage.
-- **🏷️ Vendor Identification**: Automatic device vendor lookup via the bundled OUI database — no "Unknown" labels.
+- **🏷️ Device Naming**: Resolves custom DHCP hostnames via Reverse DNS, with an automatic fallback to device vendor lookup via the bundled OUI database.
+- **🕸️ Switch Topology**: Live LLDP frame capture to intelligently map out managed network switches and port connections.
 - **📈 Stateful Monitoring**: Track network "drift" by comparing current scans against historical SQLite snapshots.
 - **🛡️ Zero-Trust Identity**: Permanent, cryptographic Peer IDs (Ed25519) powered by `iroh`'s built-in key primitives.
 - **🧠 Intelligent Fingerprinting**: Local ML models (via `tract`) identify device types based on network behavior.
@@ -24,7 +25,7 @@
 
 - **Runtime**: [Tokio](https://tokio.rs/) (Async I/O)
 - **Networking**: [pnet](https://github.com/libpnet/libpnet), [async-arp](https://github.com/skullim/async-arp), [surge-ping](https://github.com/pariahprologue/surge-ping)
-- **Vendor Lookup**: [mac_oui](https://crates.io/crates/mac_oui) (bundled Wireshark OUI database)
+- **Name Resolution**: [dns-lookup](https://crates.io/crates/dns-lookup) (PTR records), [mac_oui](https://crates.io/crates/mac_oui) (bundled Wireshark OUI database)
 - **P2P/Transfer**: [Iroh v0.98](https://iroh.computer/) / QUIC — latest stable release
 - **Identity**: Built-in to `iroh` (`iroh::SecretKey` / `iroh::PublicKey`)
 - **Intelligence**: [Tract](https://github.com/sonos/tract) (ONNX Inference)

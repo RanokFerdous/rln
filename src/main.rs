@@ -76,6 +76,18 @@ async fn main() -> Result<()> {
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }
         });
+
+        // Spawn LLDP continuous scanner task
+        let tx_lldp = tx.clone();
+        let iface_lldp = l2_scanner::get_active_interface()?;
+        tokio::spawn(async move {
+            loop {
+                let topo = lan_asin::intelligence::topology::run_lldp_scan(&iface_lldp, Duration::from_secs(30)).await;
+                if !topo.is_empty() {
+                    let _ = tx_lldp.send(AppEvent::TopologyUpdate(topo)).await;
+                }
+            }
+        });
     } else {
         // Print the guide to stderr before the TUI takes over
         privileges::print_privilege_guide();
@@ -187,9 +199,12 @@ async fn main() -> Result<()> {
                         devices,
                     };
                     
-                    let mut topology_map = std::collections::HashMap::new();
-                    topology_map.insert("Local Network".to_string(), topo);
-                    app.topology = topology_map;
+                    app.topology.insert("Local Network".to_string(), topo);
+                }
+                AppEvent::TopologyUpdate(lldp_topo) => {
+                    for (k, v) in lldp_topo {
+                        app.topology.insert(k, v);
+                    }
                 }
                 AppEvent::Log(msg) => {
                     app.add_log(msg);
@@ -208,5 +223,5 @@ async fn main() -> Result<()> {
     // 7. Cleanup
     restore_terminal()?;
     println!("Goodbye! 🛰️");
-    Ok(())
+    std::process::exit(0);
 }

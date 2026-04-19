@@ -16,6 +16,8 @@ pub enum AppEvent {
     Log(String),
     /// File transfer progress update.
     TransferProgress(crate::app::TransferState),
+    /// LLDP Switch network updates.
+    TopologyUpdate(std::collections::HashMap<String, crate::intelligence::topology::SwitchTopology>),
 }
 
 /// Sets up a background thread that listens for terminal keystrokes
