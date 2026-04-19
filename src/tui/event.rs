@@ -11,7 +11,7 @@ pub enum AppEvent {
     /// A user pressed a key.
     Key(KeyEvent),
     /// The discovery engine found new network state changes.
-    NetworkUpdate(Vec<DriftEvent>),
+    NetworkUpdate(Vec<DriftEvent>, Vec<crate::storage::drift::ScannedDevice>),
     /// P2P streaming logs or events.
     Log(String),
     /// File transfer progress update.

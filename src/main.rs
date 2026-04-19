@@ -45,22 +45,7 @@ async fn main() -> Result<()> {
     let mut app = App::new(known_devices);
     app.add_log(format!("[ID] Peer ID: {}", identity.peer_id_hex()));
 
-    // MOCK DATA FOR MILESTONE 3.2
-    use lan_asin::app::TransferState;
-    use lan_asin::intelligence::topology::run_lldp_scan;
-    app.topology = run_lldp_scan().await;
-    app.active_transfers.push(TransferState {
-        filename: "ubuntu-24.04-desktop-amd64.iso".to_string(),
-        peer_id: "AA:BB:CC:DD:EE:FF".to_string(),
-        progress_pct: 45,
-        speed_mbps: 112.5,
-    });
-    app.active_transfers.push(TransferState {
-        filename: "project_backup.tar.gz".to_string(),
-        peer_id: "11:22:33:44:55:66".to_string(),
-        progress_pct: 88,
-        speed_mbps: 45.2,
-    });
+    // Topologies and transfers will be dynamically updated by network scans and peers
 
     // 5. Spawn Background Discovery Engine
     if privileges::is_privileged() {
@@ -84,7 +69,7 @@ async fn main() -> Result<()> {
                     if let Ok(bg_db) = Database::new("data/rln_state.db") {
                         if let Ok(history) = bg_db.get_all_snapshots() {
                             let drift = calculate_drift(&history, &arp);
-                            let _ = tx_net.send(AppEvent::NetworkUpdate(drift)).await;
+                            let _ = tx_net.send(AppEvent::NetworkUpdate(drift, arp)).await;
                         }
                     }
                 }
@@ -106,7 +91,7 @@ async fn main() -> Result<()> {
                     if let Ok(bg_db) = Database::new("data/rln_state.db") {
                         if let Ok(history) = bg_db.get_all_snapshots() {
                             let drift = calculate_drift(&history, &mdns_devices);
-                            let _ = tx_mdns.send(AppEvent::NetworkUpdate(drift)).await;
+                            let _ = tx_mdns.send(AppEvent::NetworkUpdate(drift, mdns_devices)).await;
                         }
                     }
                 }
@@ -163,7 +148,7 @@ async fn main() -> Result<()> {
                                 tokio::spawn(async move {
                                     use std::path::PathBuf;
                                     use std::str::FromStr;
-                                    match iroh::net::NodeId::from_str(&peer_str) {
+                                    match iroh::EndpointId::from_str(&peer_str) {
                                         Ok(peer_id) => {
                                             let path = PathBuf::from(&path_str);
                                             if let Err(e) = node_send.send_file(peer_id, &path, tx_send.clone()).await {
@@ -183,9 +168,28 @@ async fn main() -> Result<()> {
                         _ => {}
                     },
                 },
-                AppEvent::NetworkUpdate(drift_events) => {
+                AppEvent::NetworkUpdate(drift_events, scanned_devices) => {
                     app.add_log("[NETWORK] Scan complete. Updating drift state.".into());
                     app.active_drift_events = drift_events;
+
+                    let mut devices = Vec::new();
+                    for d in scanned_devices {
+                        devices.push(lan_asin::intelligence::topology::LldpDevice {
+                            mac_address: d.mac_address,
+                            ip_address: d.ip_address,
+                            hostname: d.service_name,
+                        });
+                    }
+                    
+                    let topo = lan_asin::intelligence::topology::SwitchTopology {
+                        switch_name: "Local Network".to_string(),
+                        port_id: "LAN".to_string(),
+                        devices,
+                    };
+                    
+                    let mut topology_map = std::collections::HashMap::new();
+                    topology_map.insert("Local Network".to_string(), topo);
+                    app.topology = topology_map;
                 }
                 AppEvent::Log(msg) => {
                     app.add_log(msg);

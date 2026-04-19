@@ -11,10 +11,11 @@
 ## ✨ Key Features
 
 - **🔍 Hybrid Discovery**: Simultaneous Layer 2 (ARP/NDP) and Layer 3 (mDNS) scanning for full IPv4 and IPv6 coverage.
+- **🏷️ Vendor Identification**: Automatic device vendor lookup via the bundled OUI database — no "Unknown" labels.
 - **📈 Stateful Monitoring**: Track network "drift" by comparing current scans against historical SQLite snapshots.
-- **🛡️ Zero-Trust Identity**: Permanent, cryptographic Peer IDs (Ed25519) replace unstable IP-based targeting.
+- **🛡️ Zero-Trust Identity**: Permanent, cryptographic Peer IDs (Ed25519) powered by `iroh`'s built-in key primitives.
 - **🧠 Intelligent Fingerprinting**: Local ML models (via `tract`) identify device types based on network behavior.
-- **🚀 High-Speed Streaming**: Encrypted, resilient file movement using QUIC-based P2P streaming (via `iroh`).
+- **🚀 High-Speed Streaming**: Encrypted, resilient file movement using QUIC-based P2P streaming (via `iroh` v0.98).
 - **📊 Modern TUI**: A rich, interactive terminal dashboard built with `ratatui`.
 
 ---
@@ -23,8 +24,9 @@
 
 - **Runtime**: [Tokio](https://tokio.rs/) (Async I/O)
 - **Networking**: [pnet](https://github.com/libpnet/libpnet), [async-arp](https://github.com/skullim/async-arp), [surge-ping](https://github.com/pariahprologue/surge-ping)
-- **P2P/Transfer**: [Iroh](https://iroh.computer/) / QUIC
-- **Identity**: [Ed25519-Dalek](https://github.com/dalek-cryptography/ed25519-dalek)
+- **Vendor Lookup**: [mac_oui](https://crates.io/crates/mac_oui) (bundled Wireshark OUI database)
+- **P2P/Transfer**: [Iroh v0.98](https://iroh.computer/) / QUIC — latest stable release
+- **Identity**: Built-in to `iroh` (`iroh::SecretKey` / `iroh::PublicKey`)
 - **Intelligence**: [Tract](https://github.com/sonos/tract) (ONNX Inference)
 - **Storage**: SQLite via [rusqlite](https://github.com/rusqlite/rusqlite)
 - **UI**: [Ratatui](https://ratatui.rs/) & [Clap v4](https://clap.rs/)
@@ -67,12 +69,29 @@ docker-compose up --build
 
 ```text
 src/
-├── discovery/      # ARP/NDP and mDNS scanning engines
+├── discovery/      # ARP/NDP and mDNS scanning engines + OUI vendor lookup
 ├── intelligence/   # ICMP probes, ML fingerprinting, and topology mapping
-├── identity/       # Ed25519 key management and Peer ID validation
-├── transfer/       # Iroh-powered P2P streaming and SHA-256 hashing
+├── identity/       # Iroh-native Ed25519 key management and Peer ID
+├── transfer/       # Iroh QUIC-based P2P streaming and SHA-256 verification
 ├── storage/        # SQLite snapshot engine and drift detection logic
 └── tui/            # Ratatui event loop and dashboard views
+```
+
+---
+
+## 🔑 Identity & Peer IDs
+
+RLN uses `iroh`'s native Ed25519 key primitives (`iroh::SecretKey` / `iroh::PublicKey`) to generate a unique node identity on first boot. The identity is saved to `data/identity.key` (chmod 600).
+
+In the TUI, your node's `EndpointId` is displayed in the System Logs at startup. Other nodes use this ID to dial you directly for file transfers:
+
+```
+[ID] Peer ID: b09ceb10b3ca3e0aca54dace1998ba495911c5780dcd69b7307fb6bbd945504d
+```
+
+To send a file, press `s` and type:
+```
+<peer_endpoint_id> <filepath>
 ```
 
 ---
@@ -82,6 +101,7 @@ src/
 - **Zero-Cloud Guarantee**: All data stays on your machine. AI analysis and database storage happen 100% locally.
 - **Privilege Separation**: Scanning components are isolated to minimize the surface area requiring elevated permissions.
 - **Immutable Identity**: Your Peer ID is your source of truth. If you lose your identity file, you lose your trusted status with other nodes.
+- **SHA-256 Integrity**: Every P2P file transfer includes a streaming SHA-256 digest verified by the receiver before the file is accepted.
 
 ---
 

@@ -1,12 +1,21 @@
+//! Cryptographic identity management for the RLN node.
+//!
+//! Uses `iroh`'s native Ed25519 key primitives ([`iroh::SecretKey`] /
+//! [`iroh::PublicKey`]) — no external `ed25519-dalek` dependency required.
+//! The iroh 0.98 crate re-exports these at the crate root, keeping our
+//! identity layer tightly integrated with the P2P networking stack.
+//!
+//! On first boot, a 32-byte secret key is generated and written to
+//! `data/identity.key` with `chmod 600` permissions. On subsequent runs
+//! the same key is loaded so that the node's `EndpointId` remains stable.
 use anyhow::{Context, Result};
-use ed25519_dalek::{SigningKey, VerifyingKey};
-use rand::rngs::OsRng;
+use iroh::{PublicKey, SecretKey};
 use std::fs;
 use std::path::Path;
 
 pub struct NodeIdentity {
-    pub signing_key: SigningKey, // Private key (keep secret!)
-    pub peer_id: VerifyingKey,   // Public key (safe to share)
+    pub secret_key: SecretKey,
+    pub peer_id: PublicKey,
 }
 
 impl NodeIdentity {
@@ -18,27 +27,26 @@ impl NodeIdentity {
             // Load existing key
             let key_bytes = fs::read(path).context("Failed to read identity file")?;
 
-            // Ensure the file is exactly 32 bytes (the size of an Ed25519 secret key)
+            // Ensure the file is exactly 32 bytes
             let secret_bytes: [u8; 32] = key_bytes
                 .as_slice()
                 .try_into()
                 .context("Invalid key file size. Expected 32 bytes.")?;
 
-            let signing_key = SigningKey::from_bytes(&secret_bytes);
-            let peer_id = signing_key.verifying_key();
+            let secret_key = SecretKey::from_bytes(&secret_bytes);
+            let peer_id = secret_key.public();
 
             Ok(Self {
-                signing_key,
+                secret_key,
                 peer_id,
             })
         } else {
             // Generate a brand new keypair
-            let mut csprng = OsRng;
-            let signing_key = SigningKey::generate(&mut csprng);
-            let peer_id = signing_key.verifying_key();
+            let secret_key = SecretKey::generate();
+            let peer_id = secret_key.public();
 
             // Save the secret bytes to disk
-            fs::write(path, signing_key.to_bytes()).context("Failed to write identity file")?;
+            fs::write(path, secret_key.to_bytes()).context("Failed to write identity file")?;
 
             // Restrict file permissions to the current user only (Unix-only feature)
             #[cfg(unix)]
@@ -51,7 +59,7 @@ impl NodeIdentity {
             }
 
             Ok(Self {
-                signing_key,
+                secret_key,
                 peer_id,
             })
         }
@@ -59,11 +67,11 @@ impl NodeIdentity {
 
     /// Returns the Peer ID as a human-readable hex string for logs and TUI.
     pub fn peer_id_hex(&self) -> String {
-        hex::encode(self.peer_id.as_bytes())
+        self.peer_id.to_string()
     }
 
     /// Returns the raw 32 bytes of the private key to feed into our P2P networking stack.
     pub fn secret_bytes(&self) -> [u8; 32] {
-        self.signing_key.to_bytes()
+        self.secret_key.to_bytes()
     }
 }

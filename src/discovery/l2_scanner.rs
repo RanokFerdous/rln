@@ -1,3 +1,15 @@
+//! Layer 2 ARP sweep and interface discovery for the RLN network scanner.
+//!
+//! Performs an ARP sweep across the active interface's subnet and returns a
+//! list of [`ScannedDevice`]s. Each discovered device is enriched with a
+//! **vendor name** sourced from the bundled `mac_oui` Wireshark OUI database
+//! (`mac_oui::Oui::default()`), which is loaded once per scan at the start of
+//! [`run_arp_sweep`]. This gives the topology panel a human-readable label
+//! (e.g. "Apple, Inc." or "Raspberry Pi Trading Ltd.") instead of "Unknown".
+//!
+//! Requires `CAP_NET_RAW` on Linux or Administrator on Windows for raw socket
+//! access. A Windows stub is provided that returns an empty list and logs a
+//! warning when Npcap/WinPcap is unavailable.
 use crate::storage::drift::ScannedDevice;
 use anyhow::{bail, Result};
 use pnet::datalink::{self, NetworkInterface};
@@ -78,13 +90,23 @@ pub async fn run_arp_sweep(iface: &NetworkInterface) -> Result<Vec<ScannedDevice
 
     let outcomes = spinner.request_batch(&requests).await?;
     let mut devices = Vec::new();
+    let db = mac_oui::Oui::default().ok();
 
     for outcome in outcomes {
         if let Ok(arp) = outcome.response_result {
+            let mac_str = format!("{}", arp.sender_hw_addr);
+            
+            let mut service_name = None;
+            if let Some(oui_db) = &db {
+                if let Ok(Some(res)) = oui_db.lookup_by_mac(&mac_str) {
+                    service_name = Some(res.company_name.clone());
+                }
+            }
+
             devices.push(ScannedDevice {
-                mac_address: format!("{}", arp.sender_hw_addr),
+                mac_address: mac_str,
                 ip_address: format!("{}", arp.sender_proto_addr),
-                service_name: None,
+                service_name,
             });
         }
     }

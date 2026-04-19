@@ -7,50 +7,52 @@
 ## 🎯 1. Project Objectives
 
 - **Hybrid Discovery:** Simultaneous Layer 2 (ARP/NDP) and Layer 3 (mDNS) scanning for full IPv4 and IPv6 coverage.
+- **Vendor Identification:** Automatic device name resolution via the bundled `mac_oui` Wireshark OUI database.
 - **Stateful Monitoring:** Track network "drift" by comparing current scans against historical snapshots.
-- **Zero-Trust Identity:** Replace unstable IP-based targeting with permanent, cryptographic Peer IDs.
-- **Intelligent Fingerprinting:** Use local ML models to identify device types based on network behavior, not just MAC addresses.
-- **High-Speed Secure Transfer:** Utilize QUIC-based streaming for encrypted, resilient file movement.
+- **Zero-Trust Identity:** Replace unstable IP-based targeting with permanent, cryptographic Peer IDs — powered natively by `iroh`'s key primitives.
+- **Intelligent Fingerprinting:** Use local ML models to identify device types based on network behavior.
+- **High-Speed Secure Transfer:** Utilize QUIC-based streaming (iroh v0.98) for encrypted, resilient file movement with SHA-256 integrity verification.
 
 ---
 
 ## 🧩 2. Core Functional Modules
 
 ### 🔍 A. The Discovery Engine (The "Detect")
-- **Dual-Stack Scanner:** Implements **ARP** (IPv4) via `async-arp` and **NDP** (IPv6 Neighbor Discovery) via `pnet` to ensure full coverage.
+- **Dual-Stack Scanner:** Implements **ARP** (IPv4) via `async-arp` and **NDP** (IPv6 Neighbor Discovery) via `pnet`.
+- **OUI Vendor Lookup:** On each ARP response, the scanner queries the bundled `mac_oui` Wireshark database to resolve the device manufacturer name. This appears as the hostname in the topology panel when no mDNS name is available.
 - **Snapshot Engine:** Uses `rusqlite` to maintain a local database of "Known Good" network states.
     - *Drift Alert:* Automated diffing between current scans and SQLite snapshots.
-- **Identity Mapping:** Correlates MAC vendors (via `oui` crate) and mDNS services (via `simple-mdns`) to provide human-readable names.
+- **Identity Mapping:** Correlates OUI vendors and mDNS services (via `simple-mdns`) to provide human-readable names.
 
 ### 🧠 B. The Diagnostic & Intelligence Suite (The "Analyze")
 - **Async Multi-Probe:** High-speed ICMP checks via `surge-ping` and TCP-SYN checks for port status.
-- **AI Fingerprinting:** Local-only inference using `ort` (performance) or `tract` (portability) to categorize devices based on network traffic patterns.
-- **Topology Inference:** Captures LLDP frames using `pnet` and parses them with `packet-dissector-lldp` to map switch hierarchies.
+- **AI Fingerprinting:** Local-only inference using `tract` (ONNX) to categorize devices based on network traffic patterns.
+- **Topology Inference:** Captures and maps switch hierarchies from LLDP frames, grouping devices visually by their connected switch/router.
 
 ### 🛡️ C. The Zero-Trust Interaction Layer (The "Identify")
-- **Peer ID System:** Every RLN instance generates a unique **Ed25519** key pair via `ed25519-dalek`.
-- **Identity-Based Comm:** Addresses nodes by their Public Key, ensuring connections remain stable even when local IPs change.
-- **Secure Handshake:** Leverages the TLS layer built into the QUIC stack (via `rustls`) for confidentiality and authenticity.
+- **Iroh-Native Keys:** Every RLN instance generates a unique **Ed25519** keypair using `iroh::SecretKey` / `iroh::PublicKey` — no external `ed25519-dalek` dependency needed.
+- **Identity-Based Comm:** Addresses nodes by their **`EndpointId`** (Iroh 0.98's new name for NodeId), ensuring connections remain stable even when local IPs change.
+- **Secure Handshake:** Leverages the TLS layer built into the QUIC stack for confidentiality and authenticity.
 
 ### 🚀 D. The Transfer Protocol (The "Stream")
-- **Iroh-Powered Blobs:** High-level P2P streaming with built-in NAT punching and hole-punching for multi-subnet support.
-- **Atomic Verification:** Real-time SHA-256 hashing during the stream to guarantee bit-perfect delivery.
+- **Iroh 0.98 QUIC Streams:** Direct bidirectional QUIC streams established via `Endpoint::builder(presets::N0)`, with the N0 preset enabling the n0.computer relay and PKARR DNS for robust NAT traversal.
+- **Manual SHA-256 Verification:** Real-time SHA-256 hashing during the stream (via `sha2`) to guarantee bit-perfect delivery. Note: `iroh-blobs` is not yet compatible with `iroh 0.98` due to a pre-release `ed25519-dalek` conflict; it will be integrated in a future milestone once that is resolved.
 
 ---
 
 ## 🛠️ 3. Recommended Technical Stack
 
-| Category | Subsystem | Recommended Crate(s) | Rationale |
+| Category | Subsystem | Crate(s) | Rationale |
 | :--- | :--- | :--- | :--- |
 | **Core** | Runtime | `tokio` | The standard for high-performance async I/O in Rust. |
-| **Discovery** | L2 ARP/NDP | `pnet`, `async-arp` | `pnet` for raw packets; `async-arp` for async ARP client. |
-| **Discovery** | mDNS | `simple-mdns` | Pure Rust, Tokio-friendly (supports `_http._tcp.local` queries). |
-| **Storage** | Database | `rusqlite` | Simple, synchronous SQLite bindings; ideal for CLI tools. |
-| **Networking** | ICMP / Ping | `surge-ping` | Well-documented async ICMP echo for IPv4/IPv6. |
-| **Intelligence** | ONNX AI | `ort` or `tract` | `ort` for speed (ONNX Runtime); `tract` for zero-C-dependency. |
-| **Topology** | LLDP | `packet-dissector-lldp` | Safe TLV parser for Link Layer Discovery Protocol. |
-| **Identity** | Crypto | `ed25519-dalek` | Fast and secure Ed25519 signing/verification. |
-| **Transfer** | P2P/QUIC | `iroh` or `quinn` | `iroh` for P2P ease; `quinn` for a leaner QUIC transport. |
+| **Discovery** | L2 ARP/NDP | `pnet`, `async-arp` | `pnet` for raw packets; `async-arp` for async ARP. |
+| **Discovery** | mDNS | `simple-mdns` | Pure Rust, Tokio-friendly. |
+| **Discovery** | OUI Lookup | `mac_oui` (with-db) | Bundled Wireshark manufacturer DB for offline vendor names. |
+| **Storage** | Database | `rusqlite` | Simple, synchronous SQLite bindings. |
+| **Networking** | ICMP / Ping | `surge-ping` | Async ICMP echo for IPv4/IPv6. |
+| **Intelligence** | ONNX AI | `tract` | Pure-Rust ONNX inference, zero C dependencies. |
+| **Identity** | Crypto | `iroh::SecretKey` | Ed25519 built into iroh — no separate dalek needed. |
+| **Transfer** | P2P/QUIC | `iroh` v0.98 | Latest iroh release with improved NAT traversal via `presets::N0`. |
 | **UI** | TUI / CLI | `ratatui`, `clap` (v4) | Rich dashboard capabilities and standard argument parsing. |
 
 ---
@@ -70,23 +72,22 @@ rln/
 │   │
 │   ├── discovery/              # 🔍 Module A: The Discovery Engine
 │   │   ├── mod.rs
-│   │   ├── l2_scanner.rs       # pnet and async-arp implementation
+│   │   ├── l2_scanner.rs       # pnet, async-arp, and mac_oui vendor resolution
 │   │   └── mdns_scanner.rs     # simple-mdns integration
 │   │
 │   ├── intelligence/           # 🧠 Module B: Diagnostic & Intelligence Suite
 │   │   ├── mod.rs
 │   │   ├── probe.rs            # ICMP (surge-ping) and TCP-SYN logic
-│   │   ├── fingerprint.rs      # ort/tract local ML inference logic
-│   │   └── topology.rs         # packet-dissector-lldp parsing for switch mapping
+│   │   ├── fingerprint.rs      # tract local ML inference logic
+│   │   └── topology.rs         # LLDP parsing for switch mapping
 │   │
 │   ├── identity/               # 🛡️ Module C: Zero-Trust Interaction Layer
 │   │   ├── mod.rs
-│   │   ├── keys.rs             # ed25519-dalek key generation and secure local storage
-│   │   └── peer.rs             # Peer ID management and validation
+│   │   └── keys.rs             # iroh::SecretKey generation and secure local storage
 │   │
 │   ├── transfer/               # 🚀 Module D: The Transfer Protocol
 │   │   ├── mod.rs
-│   │   ├── stream.rs           # iroh/quinn P2P streaming setup
+│   │   ├── stream.rs           # iroh 0.98 P2P streaming (presets::N0, EndpointId)
 │   │   └── hash.rs             # In-flight SHA-256 verification
 │   │
 │   ├── storage/                # State and History
@@ -96,7 +97,7 @@ rln/
 │   │
 │   └── tui/                    # 📊 User Interface
 │       ├── mod.rs
-│       ├── event.rs            # Crossbeam/Tokio channels for async UI updates
+│       ├── event.rs            # Tokio channels for async UI updates
 │       ├── layout.rs           # ratatui grid management
 │       └── views/              # Specific TUI panes (Dashboard, Map, Logs)
 │
@@ -110,8 +111,6 @@ rln/
 
 ## 🗺️ 5. Expanded Development Roadmap
 
-This roadmap builds upon the integration plan, layering in architectural milestones, testing requirements, and permission handling (a critical factor given `CAP_NET_RAW`).
-
 ### Phase 1: Foundation & Telemetry
 *Focus: Data acquisition and local persistence.*
 
@@ -119,47 +118,50 @@ This roadmap builds upon the integration plan, layering in architectural milesto
     - [x] Initialize the project and `rusqlite` database schema.
     - [x] Implement CRUD operations for network snapshots (storing MAC, IP, Service Names).
 - **Milestone 1.2: Layer 2 & Layer 3 Scanning**
-    - [x] Integrate `pnet` and `async-arp`. Implement custom privilege escalation checks (prompting the user gracefully if sudo or `CAP_NET_RAW` is missing).
+    - [x] Integrate `pnet` and `async-arp`. Implement privilege escalation checks.
     - [x] Integrate `simple-mdns` for concurrent service discovery.
+    - [x] Integrate `mac_oui` (with bundled Wireshark OUI DB) for automatic vendor name resolution on ARP responses.
 - **Milestone 1.3: The Drift Engine**
     - [x] Write the diffing logic. Compare the active network state to the latest SQLite snapshot.
-    - [x] **Testing:** Mock L2 packets to test drift logic without needing a live, changing network.
+    - [x] **Testing:** Mock L2 packets to test drift logic without a live, changing network.
 
-### Phase 2: Identity & Secure Comms 
+### Phase 2: Identity & Secure Comms
 *Focus: Establishing the zero-trust paradigm before adding heavy transfers.*
 
 - **Milestone 2.1: Cryptographic Bootstrapping**
-    - [x] Implement `ed25519-dalek` to generate a node's Identity Keypair on first boot.
-    - [x] Save keys to a restricted local config file (e.g., `chmod 600`).
+    - [x] Implement Ed25519 key generation using `iroh::SecretKey` / `iroh::PublicKey` (removed `ed25519-dalek` dependency — iroh 0.98 provides this natively).
+    - [x] Save keys to a restricted local config file (`chmod 600`).
 - **Milestone 2.2: P2P Initialization**
-    - [x] Integrate `iroh` or `quinn`. Establish a basic listening state using the generated Peer ID.
-    - [x] Implement the custom TLS handshake to ensure only recognized Peer IDs can connect.
+    - [x] Integrate `iroh` v0.98. Establish a listening endpoint using `Endpoint::builder(presets::N0)`.
+    - [x] Authenticate peers using `connection.remote_id()` (the new `EndpointId` replaces the old `NodeId`).
 
-### Phase 3: Visualization & TUI    
+### Phase 3: Visualization & TUI
 *Focus: Bringing the data to life without blocking the async backend.*
 
 - **Milestone 3.1: Async Event Loop**
-    - [x] Set up `tokio` channels to funnel discovery events, drift alerts, and connection attempts from background workers to the UI thread.
+    - [x] Set up `tokio` channels to funnel discovery events, drift alerts, and connection attempts to the UI thread.
+    - [x] `AppEvent::NetworkUpdate` now carries both `DriftEvent`s and raw `ScannedDevice`s for live topology building.
 - **Milestone 3.2: Ratatui Dashboard**
-    - [x] Build the main views: Node List (color-coded by drift status), Active Transfers, and Event Log.
-    - [x] Integrate `packet-dissector-lldp` data to visually group devices by their connected switch/router.
+    - [x] Build the main views: Network Topology (LLDP + live scan), Active Transfers, and Event Log.
+    - [x] Topology panel now dynamically populated from live ARP + mDNS scan results (no more mock data).
 
-### Phase 4: Intelligence & Data Movement   
+### Phase 4: Intelligence & Data Movement
 *Focus: Advanced inference and high-speed streaming.*
 
 - **Milestone 4.1: ML Fingerprinting**
-    - [ ] Embed a lightweight ONNX model via `ort` or `tract`.
-    - [ ] Feed basic packet metadata (TTL, TCP Window Size, open ports via `surge-ping`) into the model to classify devices (e.g., "IoT Camera", "macOS Laptop").
+    - [ ] Embed a lightweight ONNX model via `tract`.
+    - [ ] Feed packet metadata (TTL, TCP Window Size, open ports) into the model to classify devices.
 - **Milestone 4.2: Verified File Streaming**
-    - [ ] Implement file chunking and piping over the established `iroh` connection.
-    - [ ] Add atomic SHA-256 hashing to the stream.
-    - [ ] Wire transfer progress events back to the TUI.
+    - [x] Implement file chunking and piping over `iroh` 0.98 QUIC streams.
+    - [x] Add atomic SHA-256 hashing to the stream via `hash.rs`.
+    - [x] Wire transfer progress events back to the TUI.
+    - [ ] Integrate `iroh-blobs` when a version compatible with `iroh 0.98` is released.
 
 ### Phase 5: Hardening & Release
 - **Milestone 5.1: Privilege Separation**
-    - [ ] Refine execution so that only the scanning threads require elevated privileges, dropping them where possible.
+    - [ ] Refine execution so only the scanning threads require elevated privileges.
 - **Milestone 5.2: Cross-Platform Compilation**
-    - [ ] Ensure graceful fallbacks. If running on Windows without Npcap/WinPcap, gracefully disable raw L2 features and rely on mDNS/ICMP.
+    - [ ] Graceful fallbacks on Windows without Npcap/WinPcap.
 
 ---
 
@@ -167,5 +169,5 @@ This roadmap builds upon the integration plan, layering in architectural milesto
 
 - **Zero-Cloud Guarantee:** No telemetry or data leaves the local subnet; all processing is local.
 - **Privileged Access:** Low-level packet crafting requires `CAP_NET_RAW` on Linux or Administrator on Windows.
-- **Identity Persistence:** Peer IDs are stored in a local secure config; losing this file breaks the "trust" chain with other nodes.
-- **License Compliance:** All recommended crates use MIT or Apache-2.0, ensuring no GPL viral issues.
+- **Identity Persistence:** Peer IDs are stored in `data/identity.key` (chmod 600); losing this file breaks the "trust" chain with other nodes.
+- **License Compliance:** All crates use MIT or Apache-2.0 licenses.

@@ -16,10 +16,17 @@
 //!   [u8; file_size] file_data (chunked, 64 KB at a time)
 //!   [u8; 64] sha256_hex_digest  (lowercase ASCII)
 //! ```
-#![allow(deprecated)]
+//!
+//! ## Iroh 0.98 API Notes
+//! - `Endpoint::builder(presets::N0)` replaces the old zero-arg builder
+//! - `endpoint.id()` returns `EndpointId` (replaces `node_id()` → `NodeId`)
+//! - `connection.remote_id()` replaces `get_remote_node_id(&conn)` 
+//! - `send_stream.finish()` is now synchronous (no `?` needed for async)
 use anyhow::{bail, Context, Result};
-use iroh::base::key::SecretKey;
-use iroh::net::{endpoint::get_remote_node_id, Endpoint};
+use iroh::{
+    endpoint::presets,
+    Endpoint, EndpointId, SecretKey,
+};
 use std::sync::Arc;
 
 /// The ALPN identifier for the RLN protocol.
@@ -36,15 +43,16 @@ pub struct P2pNode {
 impl P2pNode {
     /// Initializes an Iroh `Endpoint` using a pre-existing Ed25519 secret key.
     ///
-    /// The endpoint listens on a random OS-assigned UDP port and uses the
-    /// [`RLN_ALPN`] identifier for connection filtering.
+    /// The endpoint uses the `N0` preset (enables n0.computer relay + PKARR DNS),
+    /// listening on a random OS-assigned UDP port and filtering connections by
+    /// the [`RLN_ALPN`] identifier.
     ///
     /// # Errors
     /// Returns an error if the underlying QUIC socket cannot be bound.
     pub async fn new(secret_key_bytes: &[u8; 32]) -> Result<Self> {
         let secret_key = SecretKey::from_bytes(secret_key_bytes);
 
-        let endpoint = Endpoint::builder()
+        let endpoint = Endpoint::builder(presets::N0)
             .secret_key(secret_key)
             .alpns(vec![RLN_ALPN.to_vec()])
             .bind()
@@ -68,7 +76,8 @@ impl P2pNode {
         self: Arc<Self>,
         tx: tokio::sync::mpsc::Sender<crate::tui::event::AppEvent>,
     ) -> Result<()> {
-        let node_id = self.endpoint.node_id();
+        // In iroh 0.98, endpoint.id() returns EndpointId (the new name for NodeId)
+        let node_id = self.endpoint.id();
         let _ = tx
             .send(crate::tui::event::AppEvent::Log(format!(
                 "🚀 [P2P] Node online. ID: {}",
@@ -76,6 +85,7 @@ impl P2pNode {
             )))
             .await;
 
+        // accept() now returns an Accept stream iterator-style
         while let Some(incoming) = self.endpoint.accept().await {
             let connecting = match incoming.accept() {
                 Ok(conn) => conn,
@@ -107,11 +117,14 @@ impl P2pNode {
     /// SHA-256 hex digest is appended to the stream for the receiver to verify.
     /// Transfer progress is emitted to the TUI via the `tx` channel.
     ///
+    /// In iroh 0.98, we connect using an `EndpointId` (previously `NodeId`).
+    ///
     /// # Errors
     /// Returns an error if the connection, file open, or any stream write fails.
     pub async fn send_file(
         self: Arc<Self>,
-        peer_id: iroh::net::NodeId,
+        // In iroh 0.98, NodeId is replaced by EndpointId
+        peer_id: EndpointId,
         file_path: &std::path::Path,
         tx: tokio::sync::mpsc::Sender<crate::tui::event::AppEvent>,
     ) -> Result<()> {
@@ -127,6 +140,7 @@ impl P2pNode {
             .context("file_path does not have a valid filename component")?
             .to_string();
 
+        // connect() now takes an EndpointAddr or EndpointId (which impl Into<EndpointAddr>)
         let connection = self
             .endpoint
             .connect(peer_id, RLN_ALPN)
@@ -193,7 +207,8 @@ impl P2pNode {
         // --- Wire protocol: trailing hash ---
         let final_hash = hasher.finalize();
         send_stream.write_all(final_hash.as_bytes()).await?;
-        send_stream.finish()?;
+        // In iroh 0.98, finish() is still synchronous
+        send_stream.finish().context("Failed to finish send stream")?;
 
         let _ = tx
             .send(crate::tui::event::AppEvent::Log(format!(
@@ -209,7 +224,8 @@ impl P2pNode {
 /// Handles a single authenticated incoming connection: reads the file stream
 /// frame-by-frame, hashes the payload, and verifies the sender's digest.
 async fn handle_incoming_connection(
-    connecting: iroh::net::endpoint::Connecting,
+    // In iroh 0.98, this is an Accepting (awaitable future → Connection)
+    connecting: iroh::endpoint::Accepting,
     tx: tokio::sync::mpsc::Sender<crate::tui::event::AppEvent>,
 ) -> Result<()> {
     use crate::app::TransferState;
@@ -218,8 +234,8 @@ async fn handle_incoming_connection(
 
     let connection = connecting.await.context("Incoming connection failed")?;
 
-    let peer_id = get_remote_node_id(&connection)
-        .context("Failed to determine remote peer ID")?;
+    // In iroh 0.98, remote_id() replaces get_remote_node_id()
+    let peer_id = connection.remote_id();
     let peer_id_str = peer_id.to_string();
 
     let _ = tx
