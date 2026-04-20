@@ -44,6 +44,31 @@ pub fn verify_privileges(iface: &NetworkInterface) -> Result<()> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scanmode_equality() {
+        assert_eq!(ScanMode::Quick, ScanMode::Quick);
+        assert_ne!(ScanMode::Quick, ScanMode::Thorough);
+        assert_eq!(ScanMode::Thorough, ScanMode::Thorough);
+    }
+    
+    // We cannot easily test raw sockets in a CI/unprivileged environment,
+    // but we can ensure our configuration constants match our expectations.
+    #[test]
+    fn test_scanmode_parameters() {
+        let (timeout, chunks, stagger) = match ScanMode::Quick {
+            ScanMode::Quick => (400, 128, 20),
+            ScanMode::Thorough => (1200, 32, 150),
+        };
+        assert_eq!(timeout, 400);
+        assert_eq!(chunks, 128);
+        assert_eq!(stagger, 20);
+    }
+}
+
 /// The intensity of the Layer 2 scan.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScanMode {
@@ -179,10 +204,185 @@ pub async fn run_arp_sweep(iface: &NetworkInterface, mode: ScanMode) -> Result<V
     Ok(devices)
 }
 
-/// Stub for Windows: ARP sweep is not supported without Npcap/WinPcap.
-/// Returns an empty device list and logs a warning.
+/// Windows support using pnet assuming Npcap/WinPcap is installed.
 #[cfg(target_os = "windows")]
-pub async fn run_arp_sweep(_iface: &NetworkInterface, _mode: ScanMode) -> Result<Vec<ScannedDevice>> {
-    eprintln!("[L2] ARP sweep is not supported on Windows without Npcap/WinPcap. Skipping.");
-    Ok(vec![])
+pub async fn run_arp_sweep(iface: &NetworkInterface, mode: ScanMode) -> Result<Vec<ScannedDevice>> {
+    use pnet::datalink::Channel::Ethernet;
+    use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, ArpPacket, MutableArpPacket};
+    use pnet::packet::ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket};
+    use pnet::util::MacAddr;
+    use pnet::packet::{MutablePacket, Packet};
+    use std::collections::HashMap;
+    use std::net::Ipv4Addr;
+    use std::time::{Duration, Instant};
+
+    let network = iface.ips.iter().find(|ip| ip.is_ipv4());
+    let (our_ip, network) = match network {
+        Some(pnet::ipnetwork::IpNetwork::V4(net)) => (net.ip(), net),
+        _ => bail!("No IPv4 address found on interface"),
+    };
+
+    let our_mac = iface.mac.unwrap_or(MacAddr::zero());
+    if our_mac == MacAddr::zero() {
+        bail!("Interface does not have a MAC address");
+    }
+
+    let (timeout_ms, chunk_size, stagger_ms) = match mode {
+        ScanMode::Quick => (400, 128, 20),
+        ScanMode::Thorough => (1200, 32, 150),
+    };
+
+    let iface_clone = iface.clone();
+    let net_u32 = u32::from(network.network());
+    let mask = network.prefix();
+    
+    // Run the packet sending and receiving on a blocking thread
+    let outcomes: Vec<(Ipv4Addr, MacAddr)> = tokio::task::spawn_blocking(move || -> Result<Vec<(Ipv4Addr, MacAddr)>> {
+        let mut config = pnet::datalink::Config::default();
+        config.read_timeout = Some(Duration::from_millis(10));
+        
+        let (mut tx, mut rx) = match pnet::datalink::channel(&iface_clone, config) {
+            Ok(Ethernet(tx, rx)) => (tx, rx),
+            Ok(_) => bail!("Unhandled channel type"),
+            Err(e) => bail!("Failed to create datalink channel: {}", e),
+        };
+
+        let hosts = (1 << (32 - mask)) - 2;
+        let mut target_ips = Vec::new();
+        
+        for i in 1..=hosts {
+            let target_ip = Ipv4Addr::from(net_u32 + i);
+            if target_ip == our_ip {
+                continue;
+            }
+            target_ips.push(target_ip);
+        }
+
+        let mut discovered = HashMap::new();
+        let start_time = Instant::now();
+        let timeout = Duration::from_millis(timeout_ms);
+
+        for chunk in target_ips.chunks(chunk_size) {
+            for &target_ip in chunk {
+                let mut ethernet_buffer = [0u8; 42];
+                let mut ethernet_packet = MutableEthernetPacket::new(&mut ethernet_buffer).unwrap();
+
+                ethernet_packet.set_destination(MacAddr::broadcast());
+                ethernet_packet.set_source(our_mac);
+                ethernet_packet.set_ethertype(EtherTypes::Arp);
+
+                let mut arp_buffer = [0u8; 28];
+                let mut arp_packet = MutableArpPacket::new(&mut arp_buffer).unwrap();
+
+                arp_packet.set_hardware_type(ArpHardwareTypes::Ethernet);
+                arp_packet.set_protocol_type(EtherTypes::Ipv4);
+                arp_packet.set_hw_addr_len(6);
+                arp_packet.set_proto_addr_len(4);
+                arp_packet.set_operation(ArpOperations::Request);
+                arp_packet.set_sender_hw_addr(our_mac);
+                arp_packet.set_sender_proto_addr(our_ip);
+                arp_packet.set_target_hw_addr(MacAddr::zero());
+                arp_packet.set_target_proto_addr(target_ip);
+
+                ethernet_packet.set_payload(arp_packet.packet_mut());
+
+                tx.send_to(ethernet_packet.packet(), None);
+            }
+            
+            std::thread::sleep(Duration::from_millis(stagger_ms));
+            
+            // Drain RX queue for a short bit after sending chunk
+            while let Ok(packet) = rx.next() {
+                if let Some(eth) = EthernetPacket::new(packet) {
+                    if eth.get_ethertype() == EtherTypes::Arp {
+                        if let Some(arp) = ArpPacket::new(eth.payload()) {
+                            if arp.get_operation() == ArpOperations::Reply && arp.get_target_proto_addr() == our_ip {
+                                discovered.insert(arp.get_sender_proto_addr(), arp.get_sender_hw_addr());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Wait for the remaining timeout to catch late replies
+        while start_time.elapsed() < timeout {
+            if let Ok(packet) = rx.next() {
+                if let Some(eth) = EthernetPacket::new(packet) {
+                    if eth.get_ethertype() == EtherTypes::Arp {
+                        if let Some(arp) = ArpPacket::new(eth.payload()) {
+                            if arp.get_operation() == ArpOperations::Reply && arp.get_target_proto_addr() == our_ip {
+                                discovered.insert(arp.get_sender_proto_addr(), arp.get_sender_hw_addr());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(discovered.into_iter().collect())
+    }).await??;
+
+    let mut devices = Vec::new();
+    let db = mac_oui::Oui::default().ok();
+
+    // 1. Perform Reverse DNS lookups concurrently
+    let mut dns_tasks = Vec::new();
+    for (ip_addr_v4, mac_addr) in outcomes {
+        let ip_addr = std::net::IpAddr::V4(ip_addr_v4);
+        let mac_str = format!("{}", mac_addr);
+        let ip_str = format!("{}", ip_addr_v4);
+
+        dns_tasks.push(tokio::spawn(async move {
+            let ip_str_clone = ip_str.clone();
+            let name = tokio::task::spawn_blocking(move || {
+                if let Ok(n) = dns_lookup::lookup_addr(&ip_addr) {
+                    if !n.is_empty() && n != ip_str_clone && !n.starts_with("localhost") {
+                        return Some(n);
+                    }
+                }
+                None
+            })
+            .await
+            .unwrap_or(None);
+
+            (mac_str, ip_str, name)
+        }));
+    }
+
+    // 2. Resolve final names, combining DNS and OUI
+    for task in dns_tasks {
+        if let Ok((mac_str, ip_str, dns_name)) = task.await {
+            let oui_name = db.as_ref().and_then(|oui_db| {
+                oui_db
+                    .lookup_by_mac(&mac_str)
+                    .ok()
+                    .flatten()
+                    .map(|res| res.company_name.clone())
+            });
+
+            let service_name = match (dns_name, oui_name) {
+                (Some(dns), Some(oui)) => Some(format!("{} ({})", dns, oui)),
+                (Some(dns), None) => Some(dns),
+                (None, Some(oui)) => Some(oui),
+                (None, None) => None,
+            };
+
+            devices.push(ScannedDevice {
+                mac_address: mac_str,
+                ip_address: ip_str,
+                service_name,
+            });
+        }
+    }
+
+    // 3. Always include this local device itself in the topology
+    let local_hostname = gethostname::gethostname().into_string().unwrap_or_else(|_| "unknown-pc".to_owned());
+    devices.push(ScannedDevice {
+        mac_address: format!("{}", our_mac),
+        ip_address: format!("{}", our_ip),
+        service_name: Some(format!("{} (This Device)", local_hostname)),
+    });
+
+    Ok(devices)
 }

@@ -13,7 +13,6 @@ async-trait = "0.1"
 anyhow = "1.0"
 # Networking & Discovery
 pnet = "0.35"
-async-arp = "0.4"
 simple-mdns = { version = "0.6.3", features = ["async-tokio"] }
 mac_oui = { version = "0.4.11", features = ["with-db"] }
 surge-ping = "0.8"
@@ -41,6 +40,9 @@ crossterm = "0.29"
 hex = "0.4.3"
 dns-lookup = "3.0.1"
 gethostname = "1.1.0"
+
+[target.'cfg(unix)'.dependencies]
+async-arp = "0.4"
 
 [dev-dependencies]
 mockall = "0.14"

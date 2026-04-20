@@ -1,4 +1,4 @@
-# 🛰️ Rust-LAN-Navigator (RLN) v2.0
+# 🛰️ Rust-LAN-Navigator (RLN)
 
 [![Rust](https://img.shields.io/badge/language-Rust-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](#license)
@@ -41,7 +41,7 @@
 - **Rust**: Latest stable version.
 - **Privileges**: RLN requires low-level network access.
   - **Linux**: `CAP_NET_RAW` capabilities or `sudo`.
-  - **Windows**: Administrator privileges (Npcap recommended).
+  - **Windows**: Administrator privileges (Npcap required).
 
 ### Local Installation (macOS, Windows, & Linux)
 

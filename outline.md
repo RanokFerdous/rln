@@ -164,7 +164,7 @@ rln/
 - **Milestone 5.1: Privilege Separation**
     - [ ] Refine execution so only the scanning threads require elevated privileges.
 - **Milestone 5.2: Cross-Platform Compilation**
-    - [ ] Graceful fallbacks on Windows without Npcap/WinPcap.
+    - [x] Native Windows ARP scanning implemented using `pnet` (requires Npcap).
 
 ---
 
