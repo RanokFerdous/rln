@@ -209,10 +209,6 @@ impl P2pNode {
         // --- Wire protocol: trailing hash ---
         let final_hash = hasher.finalize();
         send_stream.write_all(final_hash.as_bytes()).await?;
-        // In iroh 0.98, finish() is still synchronous
-        send_stream
-            .finish()
-            .context("Failed to finish send stream")?;
 
         // Wait to receive the acknowledgement byte from the recipient so we don't
         // drop the QUIC connection before the stream is fully delivered.
@@ -220,6 +216,12 @@ impl P2pNode {
         if _recv_stream.read_exact(&mut ack).await.is_err() || ack[0] != 1 {
             bail!("Transfer rejected or interrupted by peer.");
         }
+
+        // In iroh 0.98, finish() is still synchronous. Doing this AFTER getting the ACK 
+        // allows the receiver to gracefully exit only once we have successfully registered it.
+        send_stream
+            .finish()
+            .context("Failed to finish send stream")?;
 
         let _ = tx
             .send(crate::tui::event::AppEvent::Log(format!(
@@ -353,6 +355,10 @@ async fn handle_incoming_connection(
         // Output ACK
         let _ = _send_stream.write_all(&[1]).await;
         let _ = _send_stream.finish();
+
+        // Wait for the sender to gracefully close its side before dropping
+        let mut throwaway = [0u8; 1];
+        let _ = recv_stream.read(&mut throwaway).await;
     } else {
         let _ = tx
             .send(crate::tui::event::AppEvent::Log(format!(

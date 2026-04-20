@@ -154,8 +154,10 @@ rln/
 - **Milestone 4.1: ML Fingerprinting**
     - [ ] Embed a lightweight ONNX model via `tract`.
     - [ ] Feed packet metadata (TTL, TCP Window Size, open ports) into the model to classify devices.
+- **Terminal UI Polish:** Filter double-keystroke inputs on Windows `crossterm` and utilize scrollable widgets to ensure transfers and logs remain permanently visible to the user.
 - **Milestone 4.2: Verified File Streaming**
     - [x] Implement file chunking and piping over `iroh` 0.98 QUIC streams.
+    - [x] Stream files to the `data/downloads/` disk directory utilizing explicit network ACKs to guarantee stream closures are perfectly synchronized across OSes.
     - [x] Add atomic SHA-256 hashing to the stream via `hash.rs`.
     - [x] Wire transfer progress events back to the TUI.
     - [ ] Integrate `iroh-blobs` when a version compatible with `iroh 0.98` is released.

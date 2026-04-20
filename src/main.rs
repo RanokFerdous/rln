@@ -217,6 +217,14 @@ async fn main() -> Result<()> {
                         KeyCode::Down => {
                             app.log_scroll_offset = app.log_scroll_offset.saturating_sub(1);
                         }
+                        KeyCode::Left => {
+                            app.transfer_scroll_offset = app.transfer_scroll_offset.saturating_sub(1);
+                        }
+                        KeyCode::Right => {
+                            let max_scroll = app.active_transfers.len().saturating_sub(1);
+                            app.transfer_scroll_offset =
+                                app.transfer_scroll_offset.saturating_add(1).min(max_scroll);
+                        }
                         KeyCode::PageUp => {
                             let max_scroll = app.logs.len().saturating_sub(1) as u16;
                             app.log_scroll_offset =
@@ -336,10 +344,17 @@ async fn main() -> Result<()> {
                     app.add_log(msg);
                 }
                 AppEvent::TransferProgress(state) => {
-                    app.active_transfers
-                        .retain(|t| t.peer_id != state.peer_id || t.filename != state.filename);
-                    if state.progress_pct < 100 {
+                    if let Some(existing) = app.active_transfers
+                        .iter_mut()
+                        .find(|t| t.peer_id == state.peer_id && t.filename == state.filename)
+                    {
+                        *existing = state;
+                    } else {
                         app.active_transfers.push(state);
+                        // Prevent UI overflow if we have over 50 transfer states.
+                        if app.active_transfers.len() > 50 {
+                            app.active_transfers.remove(0);
+                        }
                     }
                 }
                 AppEvent::Tick => {}

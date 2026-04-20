@@ -111,6 +111,15 @@ sudo docker-compose run --rm rln
 
 > ⚠️ **macOS & Windows Docker limitations:** Docker Desktop on macOS and Windows runs containers inside a hidden Linux VM. This VM acts as a NAT firewall that completely blocks the raw Layer 2 network packets (ARP, NDP, LLDP) that RLN needs to see the physical LAN. Because of this, **Docker is only recommended for native Linux hosts.** On Mac and Windows, you should run RLN natively!
 
+## 📂 Download & Received Files
+
+Files received from other peers are automatically saved directly to the \`data/downloads/\` folder inside your RLN workspace.
+
+When a file transfer successfully completes, the exact absolute path to your file will be printed in the System Logs:
+\`\`\`text
+[SUCCESS] [P2P] Verified 'document.pdf' saved to 'data/downloads/document.pdf'  sha256: e3b0...
+\`\`\`
+
 ---
 
 ## 📂 Project Structure

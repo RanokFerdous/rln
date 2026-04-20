@@ -52,6 +52,8 @@ pub struct App {
     pub known_rln_peers: HashMap<String, String>,
     /// The current scroll offset (in lines) for the system logs view.
     pub log_scroll_offset: u16,
+    /// The current scroll offset (in items) for the active transfers view.
+    pub transfer_scroll_offset: usize,
 }
 
 impl App {
@@ -76,6 +78,7 @@ impl App {
             local_peer_id: String::new(),
             known_rln_peers: HashMap::new(),
             log_scroll_offset: 0,
+            transfer_scroll_offset: 0,
         }
     }
 

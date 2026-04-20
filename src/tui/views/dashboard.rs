@@ -173,7 +173,7 @@ fn draw_transfers(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
     if app.active_transfers.is_empty() {
         items.push(ListItem::new(Span::styled(
-            "  No active transfers.",
+            "  No recent transfers.",
             Style::default().fg(Color::DarkGray),
         )));
     } else {
@@ -215,9 +215,19 @@ fn draw_transfers(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::Green))
-            .title(" Active P2P Transfers "),
+            .title(if app.transfer_scroll_offset > 0 {
+                format!(
+                    " P2P Transfers (Scroll: {}/{}) ",
+                    app.transfer_scroll_offset,
+                    app.active_transfers.len().saturating_sub(1)
+                )
+            } else {
+                " P2P Transfers ".to_string()
+            }),
     );
-    f.render_widget(list, area);
+    let mut state = ratatui::widgets::ListState::default();
+    state.select(Some(app.transfer_scroll_offset));
+    f.render_stateful_widget(list, area, &mut state);
 }
 
 /// Renders the system log panel.
